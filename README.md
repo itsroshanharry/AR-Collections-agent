@@ -13,6 +13,11 @@ an experiment result is a statement about the agent rather than about a proxy fo
 
 Runs at **$0**: free-tier LLM inference, local TTS, SQLite for dev.
 
+> Built with [Claude Code](https://claude.com/claude-code). [IMPLEMENTATION.md](IMPLEMENTATION.md)
+> records every design decision, where each deviates from the original plan and why, and the twelve
+> bugs found during the build — several of which were silent, producing plausible output while being
+> wrong. [SETUP.md](SETUP.md) has every command from clone to live call.
+
 ---
 
 ## Design decisions worth calling out
