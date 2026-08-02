@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+
+# Databases
+*.db
+*.sqlite3
+
+# Data
+# Kaggle base data is licence-restricted and machine-local: download it, don't commit it.
+data/raw/*
+!data/raw/.gitkeep
+data/synthetic/*.csv
+
+# Experiment artifacts
+artifacts/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

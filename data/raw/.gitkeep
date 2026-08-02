@@ -1,0 +1,11 @@
+# Kaggle base dataset goes here (gitignored - licence-restricted, machine-local).
+#
+#   pip install kaggle
+#   # Kaggle -> Account settings -> "Create New API Token" -> kaggle.json
+#   # Windows: move kaggle.json to %USERPROFILE%\.kaggle\kaggle.json
+#   kaggle datasets download -d pradumn203/payment-date-prediction-for-invoices-dataset -p data/raw/
+#   # then unzip in place
+#
+# data/generate_dataset.py uses whatever CSV lands here as its statistical base.
+# If this directory is empty it falls back to built-in distributions with a warning,
+# so a fresh clone still runs.

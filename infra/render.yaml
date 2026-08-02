@@ -1,0 +1,30 @@
+# Render blueprint for the A/B dashboard.
+#
+# NOTE: there is deliberately no `databases:` block here. Render's free Postgres is
+# deleted 30 days after creation (14-day grace period), which would silently destroy a
+# portfolio demo a month after you built it. Provision a free Neon project instead and
+# paste its connection string into DATABASE_URL - it is always-free and scales to zero.
+#
+# The voice agent is NOT deployed here. It needs a persistent worker rather than an HTTP
+# service, and Render's free tier has no GPU; run it locally in `console` mode for demos,
+# or add a separate paid worker service with VOICE_PROVIDER=cloud.
+
+services:
+  - type: web
+    name: ar-ab-dashboard
+    runtime: docker
+    plan: free
+    dockerfilePath: ./infra/Dockerfile.dashboard
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # paste the Neon connection string in the dashboard
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: VOICE_PROVIDER
+        value: cloud
+      # Free instances spin down after ~15 min idle and cold-start in 30-60s.
+      # Warm it up before a live interview.
