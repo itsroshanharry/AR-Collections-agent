@@ -21,7 +21,7 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 
@@ -63,26 +63,55 @@ def select_prompt(tier: RiskTier, prompts: list[PromptVersion] | None = None) ->
     return max(unscoped or prompts, key=lambda p: p.version)
 
 
-def pick_invoice() -> Invoice:
-    """The invoice this call is about.
+class NoCallDue(RuntimeError):
+    """The workflow has invoices, but none may be called right now."""
 
-    CALL_INVOICE_ID pins a specific one (useful for demos); otherwise take the top of
-    the prioritised dunning queue.
+
+async def pick_call_target(now: datetime | None = None) -> tuple[Invoice, RiskTier]:
+    """The invoice this call is about, and the risk tier to call it at.
+
+    In order:
+      1. CALL_INVOICE_ID pins one (demos). Taken from the workflow if synced there - so
+         the call uses the aged balance and any broken-promise tier bump - else the CSV.
+      2. The dunning workflow's call queue: the highest-priority invoice whose cadence
+         wants a call that the contact rules allow right now.
+      3. Only if the workflow is empty (never synced): the static CSV queue, as before.
+
+    Falling back to the CSV when the workflow simply has nothing due would call
+    customers the contact rules say to leave alone, so that raises NoCallDue instead.
     """
     from data.generate_dataset import load_invoices
+    from workflow import service
 
-    invoices = load_invoices()
     wanted = os.getenv("CALL_INVOICE_ID")
     if wanted:
-        for inv in invoices:
+        try:
+            detail = await service.invoice_detail(wanted, now=now)
+            return detail.invoice, RiskTier(detail.row.tier)
+        except service.NotFoundError:
+            pass
+        for inv in load_invoices():
             if inv.invoice_id == wanted:
-                return inv
-        raise SystemExit(f"CALL_INVOICE_ID={wanted!r} not found in the dataset")
+                return inv, classify_risk(inv)
+        raise SystemExit(f"CALL_INVOICE_ID={wanted!r} not found in the workflow or dataset")
 
-    queue = build_call_queue(invoices, limit=1)
+    due = await service.due_calls(now=now, limit=1)
+    if due:
+        return due[0].invoice, due[0].tier
+    if await service.has_invoices():
+        raise NoCallDue(
+            "No call is due: every invoice is waiting on its cadence, a contact rule, or a "
+            "person. POST /dunning/tick to advance the schedule, or see GET /dunning/queue."
+        )
+
+    logger.warning(
+        "Dunning workflow is empty; calling from the static CSV queue. "
+        "POST /dunning/sync to manage calls through the workflow."
+    )
+    queue = build_call_queue(load_invoices(), limit=1)
     if not queue:
         raise SystemExit("No overdue invoices in the dataset.")
-    return queue[0].invoice
+    return queue[0].invoice, queue[0].tier
 
 
 # --------------------------------------------------------------------------------------
@@ -114,6 +143,8 @@ def build_server():
         relying solely on a post-call extraction pass over the transcript."""
 
         def __init__(self, invoice: Invoice, prompt: PromptVersion) -> None:
+            # Everything the tools capture is reconciled against the post-call
+            # extraction by the dunning workflow; disagreement opens a QA task.
             super().__init__(instructions=prompt.render(invoice))
             self.invoice = invoice
             self.prompt = prompt
@@ -167,8 +198,15 @@ def build_server():
 
     @server.rtc_session(agent_name="ar-collections-agent")
     async def entrypoint(ctx: agents.JobContext) -> None:
-        invoice = pick_invoice()
-        tier = classify_risk(invoice)
+        from ab_dashboard.db import init_db
+
+        await init_db()
+        try:
+            invoice, tier = await pick_call_target()
+        except NoCallDue as exc:
+            logger.warning("%s", exc)
+            ctx.shutdown(reason="no call due")
+            return
         prompt = select_prompt(tier)
         logger.info(
             "Calling about %s (%s %s, %d days overdue) tier=%s tone=%s prompt=%s",
@@ -206,7 +244,13 @@ def build_server():
         # Score and persist once the call ends.
         async def _finalise() -> None:
             await _score_and_log_call(
-                invoice, prompt, session, agent, mode="voice", provider=dialogue_provider
+                invoice,
+                prompt,
+                session,
+                agent,
+                mode="voice",
+                provider=dialogue_provider,
+                tier=tier,
             )
 
         ctx.add_shutdown_callback(_finalise)
@@ -215,14 +259,16 @@ def build_server():
 
 
 async def _score_and_log_call(
-    invoice, prompt, session, agent, *, mode: str, provider: str
+    invoice, prompt, session, agent, *, mode: str, provider: str, tier: RiskTier
 ) -> None:
-    """Extract the outcome, judge the transcript, and write it to call_logs."""
+    """Extract the outcome, judge the transcript, write it to call_logs, and feed the
+    outcome into the dunning workflow (next state + follow-up tasks)."""
     from ab_dashboard.db import init_db
     from shared.eval.judge import judge_transcript
     from shared.llm_client import LLMClient
     from voice_agent.call_logger import log_call, prompt_health
     from voice_agent.outcome_extractor import extract_outcome
+    from workflow import service as workflow
 
     try:
         items = session.history.items
@@ -252,9 +298,9 @@ async def _score_and_log_call(
             client,
             invoice,
             transcript,
-            assigned_tone=tone_for_tier(classify_risk(invoice)).value,
+            assigned_tone=tone_for_tier(tier).value,
         )
-        await log_call(
+        call_log_id = await log_call(
             invoice,
             prompt.id,
             transcript,
@@ -265,6 +311,25 @@ async def _score_and_log_call(
         )
         health = await prompt_health(prompt.id)
         logger.info("Prompt %s health: %s", prompt.id, health.reason)
+
+        report = await workflow.record_call_outcome(
+            invoice.invoice_id,
+            outcome,
+            call_log_id=call_log_id,
+            captured=agent.captured,
+            invoice=invoice,
+        )
+        logger.info(
+            "Workflow: %s is now %s (tier %s), %d task(s) opened, next %s at %s",
+            report.invoice_id,
+            report.state,
+            report.tier,
+            len(report.tasks_opened),
+            report.next_action_channel,
+            report.next_action_at,
+        )
+        if report.discrepancy:
+            logger.warning("Capture/extraction disagreement: %s", report.discrepancy)
     finally:
         await client.aclose()
 
