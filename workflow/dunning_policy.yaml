@@ -1,0 +1,80 @@
+# Risk-tiered dunning policy.
+#
+# This file is the whole collections playbook: what happens to an overdue invoice, in
+# what order, and how often a customer may be contacted. It is data rather than code so
+# a finance or compliance reviewer can read and change it without reading Python, and so
+# every automated contact can be traced back to a rule written here.
+#
+# Loaded and validated by workflow/policy.py at startup. A malformed policy fails loudly
+# then, not in the middle of a dunning run.
+
+# Cadence per risk tier. Each step waits `wait_days` after the previous contact (or after
+# the invoice enters the tier, for the first step), then contacts on `channel`.
+# Every cadence must end in `escalate`: an invoice that has run through its playbook goes
+# to a human, never round the loop again.
+#
+# Channels: email | sms | call | escalate
+cadences:
+  low:
+    - {channel: email, wait_days: 0}
+    - {channel: email, wait_days: 7}
+    - {channel: call, wait_days: 5}
+    - {channel: email, wait_days: 7}
+    - {channel: escalate, wait_days: 7}
+  medium:
+    - {channel: email, wait_days: 0}
+    - {channel: call, wait_days: 3}
+    - {channel: sms, wait_days: 3}
+    - {channel: call, wait_days: 4}
+    - {channel: escalate, wait_days: 5}
+  high:
+    - {channel: call, wait_days: 0}
+    - {channel: email, wait_days: 2}
+    - {channel: call, wait_days: 2}
+    - {channel: escalate, wait_days: 3}
+  critical:
+    - {channel: call, wait_days: 0}
+    - {channel: call, wait_days: 2}
+    - {channel: escalate, wait_days: 2}
+
+# Limits that hold regardless of tier. A cadence step that would break one is delayed
+# until it no longer does, never skipped and never sent early.
+contact_rules:
+  # Across all channels, in any rolling 7-day window.
+  max_contacts_per_7_days: 4
+  max_calls_per_7_days: 2
+  # Minimum gap between any two contacts.
+  min_hours_between_contacts: 20
+  # Calls and SMS only go out inside this window, in the customer's local time. It
+  # mirrors the RBI Fair Practices Code for recovery calls (08:00-19:00); email is not
+  # restricted, because it does not interrupt anyone.
+  contact_window_start: "09:00"
+  contact_window_end: "19:00"
+  # ISO weekdays, Monday = 1. No calls or SMS on Sunday.
+  contact_days: [1, 2, 3, 4, 5, 6]
+
+# Used when a customer record carries no timezone. Keyed by invoice currency, which is
+# the best location signal the ledger has.
+default_timezones:
+  INR: Asia/Kolkata
+  USD: America/New_York
+  SGD: Asia/Singapore
+  EUR: Europe/Berlin
+  GBP: Europe/London
+fallback_timezone: Asia/Kolkata
+
+promises:
+  # Days after the promised date before a promise counts as broken. Bank transfers can
+  # take a day to land, so marking it broken on the day itself would punish customers
+  # who paid on time.
+  grace_days: 2
+  # After this many broken promises, stop automated contact and hand it to a person.
+  escalate_after_broken: 2
+
+# Days from creation until each follow-up task is due.
+task_sla_days:
+  verify_payment: 0        # due the day the promise grace period ends
+  review_dispute: 3
+  reconcile_payment: 2
+  escalation_review: 1
+  review_call: 2
