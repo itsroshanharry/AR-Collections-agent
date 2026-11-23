@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # tier, where it is the single biggest speed-up available.
     max_concurrent_llm_calls: int = 1
 
+    # --- Dunning workflow ---
+    # Seconds between scheduler passes in the dashboard process. 0 disables the timer;
+    # POST /dunning/tick still runs a pass on demand.
+    dunning_tick_seconds: float = 300
+
     @property
     def has_any_llm_provider(self) -> bool:
         return bool(self.groq_api_key or self.cerebras_api_key)

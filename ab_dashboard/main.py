@@ -22,13 +22,27 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ab_dashboard import jobs
 from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
-from ab_dashboard.routers import experiments, prompts
+from ab_dashboard.routers import dunning, experiments, prompts
 from shared.config import get_settings
+from workflow import service as dunning_service
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+async def _dunning_loop(interval: float) -> None:
+    """The dunning scheduler: lapse promises, send due emails, escalate. Every pass is
+    per-invoice transactional and safe to run on several workers at once."""
+    while True:
+        try:
+            report = await dunning_service.tick()
+            if report.emails_sent or report.escalated or report.promises_broken:
+                logger.info("Dunning tick: %s", report)
+        except Exception:  # noqa: BLE001 - a failed pass must not stop future passes
+            logger.warning("Dunning tick failed", exc_info=True)
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
@@ -44,13 +58,21 @@ async def lifespan(app: FastAPI):
         )
     # Resumes runs interrupted by the last restart, then keeps sweeping for runs whose
     # worker died without releasing them.
-    reaper = asyncio.create_task(jobs.reaper_loop(), name="experiment-reaper")
+    background = [asyncio.create_task(jobs.reaper_loop(), name="experiment-reaper")]
+    if settings.dunning_tick_seconds > 0:
+        background.append(
+            asyncio.create_task(
+                _dunning_loop(settings.dunning_tick_seconds), name="dunning-scheduler"
+            )
+        )
     try:
         yield
     finally:
-        reaper.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await reaper
+        for task in background:
+            task.cancel()
+        for task in background:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await jobs.shutdown()
         await dispose_engine()
 
@@ -73,6 +95,8 @@ app.add_middleware(
 
 app.include_router(prompts.router)
 app.include_router(experiments.router)
+app.include_router(dunning.router)
+app.include_router(dunning.tasks_router)
 
 
 @app.get("/health", tags=["meta"])
