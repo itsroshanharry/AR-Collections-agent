@@ -14,10 +14,12 @@ import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import func, inspect, select, text, update
 
 from ab_dashboard import jobs
 from ab_dashboard.db import (
+    MIGRATIONS_DIR,
     Base,
     ExperimentRow,
     ExperimentStatus,
@@ -76,7 +78,7 @@ class TestMigrations:
             )
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
         assert {"seed", "scenario_limit", "worker_id", "heartbeat_at"} <= columns
-        assert version == "0002"
+        assert version == ScriptDirectory(str(MIGRATIONS_DIR)).get_current_head()
 
 
 # --------------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from alembic import command
@@ -22,6 +22,7 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -179,6 +180,121 @@ class CallLogRow(Base):
 
     duration_ms: Mapped[float] = mapped_column(Float, default=0.0)
     provider: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Dunning workflow
+# --------------------------------------------------------------------------------------
+
+
+class InvoiceStateRow(Base):
+    """Where one invoice stands in the dunning workflow. The state machine's Snapshot,
+    persisted. See workflow/state_machine.py for the states and what moves between them."""
+
+    __tablename__ = "invoice_states"
+
+    invoice_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String(64), index=True)
+    # The invoice as synced from the ledger. Calls are rendered from it and the judge
+    # grounds against it, so it is the record of what the agent was allowed to say.
+    invoice: Mapped[dict] = mapped_column(JSON)
+    # Money as text: SQLite has no decimal type and a float would round it.
+    amount_outstanding: Mapped[str] = mapped_column(String(32))
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    do_not_call: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    state: Mapped[str] = mapped_column(String(24), index=True)
+    tier: Mapped[str] = mapped_column(String(16))
+    cadence_tier: Mapped[str] = mapped_column(String(16))
+    cadence_step: Mapped[int] = mapped_column(Integer, default=0)
+    cadence_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    promise_to_pay_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    broken_promises: Mapped[int] = mapped_column(Integer, default=0)
+    escalations: Mapped[int] = mapped_column(Integer, default=0)
+    closed_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    next_action_channel: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    next_action_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+    # Ageing: days overdue at sync time, and the date of that sync. Days overdue at any
+    # later date is derived from these rather than frozen at the dataset's snapshot.
+    snapshot_days_overdue: Mapped[int] = mapped_column(Integer)
+    synced_on: Mapped[date] = mapped_column(Date)
+
+    # Optimistic locking: the scheduler, the voice agent and a person resolving a task
+    # can all touch one invoice at once. A write based on a stale read fails instead of
+    # silently overwriting the other one's change.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    __mapper_args__ = {"version_id_col": version}
+
+
+class ContactAttemptRow(Base):
+    """Every time the customer was contacted. The frequency caps are computed from this."""
+
+    __tablename__ = "contact_attempts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    invoice_id: Mapped[str] = mapped_column(
+        ForeignKey("invoice_states.invoice_id", ondelete="CASCADE"), index=True
+    )
+    customer_id: Mapped[str] = mapped_column(String(64), index=True)
+    channel: Mapped[str] = mapped_column(String(16))
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    call_log_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class TaskRow(Base):
+    """Follow-up work for a person, opened by the workflow (see state_machine.TaskSpec)."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    invoice_id: Mapped[str] = mapped_column(
+        ForeignKey("invoice_states.invoice_id", ondelete="CASCADE"), index=True
+    )
+    task_type: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    assignee: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    due_date: Mapped[date] = mapped_column(Date, index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Idempotency: the same call re-processed, or the same broken promise detected by two
+    # sweeps, maps to the same key and so cannot open a second task.
+    dedupe_key: Mapped[str] = mapped_column(String(160), unique=True)
+    call_log_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resolution: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resolution_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class InvoiceEventRow(Base):
+    """Append-only audit trail: every transition, with the state before and after."""
+
+    __tablename__ = "invoice_events"
+
+    # Integer, not a uuid: several events share one timestamp (sync, then disputed on
+    # arrival), and the autoincrement id is what keeps the timeline in order.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invoice_id: Mapped[str] = mapped_column(
+        ForeignKey("invoice_states.invoice_id", ondelete="CASCADE"), index=True
+    )
+    event: Mapped[str] = mapped_column(String(64))
+    from_state: Mapped[str] = mapped_column(String(24))
+    to_state: Mapped[str] = mapped_column(String(24))
+    tier: Mapped[str] = mapped_column(String(16))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, index=True
     )

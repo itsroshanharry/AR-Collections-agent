@@ -45,6 +45,9 @@ class Customer(BaseModel):
     phone: str | None = None
     email: str | None = None
     gstin: str | None = None
+    # IANA name, e.g. "Asia/Kolkata". Optional: the dunning policy falls back to one
+    # inferred from the invoice currency when the ledger does not record it.
+    timezone: str | None = None
 
 
 class Invoice(BaseModel):
