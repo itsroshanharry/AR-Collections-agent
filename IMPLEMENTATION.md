@@ -8,7 +8,7 @@ that produced it.
 
 | Verification | Result |
 |---|---|
-| Unit/integration tests | **198 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
+| Unit/integration tests | **287 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
 | Eval sweep (`--simulate`, 18 scenarios, live LLM) | **16/18 outcomes (89%)**, 6/7 promise dates, **2/2 injections resisted** |
 | Live voice call (LiveKit + Deepgram, real audio) | **composite 4.8/5**, promise-to-pay captured correctly, 0 hallucinations, 0 compliance violations |
 | Lint | `ruff` clean |
@@ -104,6 +104,23 @@ be wrong.
 tokens/day per model**, charged against *reserved* `max_tokens` rather than tokens generated. Backoff
 alone means every 429 is a wasted round-trip. Pacing took a full sweep from 75 rejections to **zero**.
 
+**Risk-tiered dunning workflow** ([`workflow/`](workflow/)). The plan's "tone per tier" became a
+full collections workflow, split so the rules stay auditable:
+
+| Module | Pure? | Role |
+|---|---|---|
+| [`dunning_policy.yaml`](workflow/dunning_policy.yaml) | data | Cadence per tier, contact caps, calling hours, promise grace, task SLAs |
+| [`policy.py`](workflow/policy.py) | yes | Loads and validates it; every cadence must end in escalation |
+| [`scheduler.py`](workflow/scheduler.py) | yes | Earliest *permitted* next action: caps, minimum gap, customer-local calling hours, do-not-call |
+| [`state_machine.py`](workflow/state_machine.py) | yes | Snapshot + event → new state, tasks to open, tasks to close |
+| [`service.py`](workflow/service.py) | no | Loads a row, applies the pure functions, writes state + tasks + audit event in one transaction |
+
+Choices worth noting: contact caps are **per customer**, not per invoice, and each customer's most
+urgent invoice leads the conversation; tiering uses the invoice **as it stands today** (aged since
+sync, net of payments); each broken promise bumps the tier; concurrent writers (scheduler, voice
+agent, a person resolving a task) are serialised by an optimistic-lock version column rather than
+locks. The voice agent dials from this queue and calls no one when nothing is due.
+
 **Durable, resumable experiments** ([`jobs.py`](ab_dashboard/jobs.py)). The database is the queue:
 a worker claims a run with one conditional `UPDATE` (atomic on SQLite and Postgres, so no Redis and
 no `SKIP LOCKED`), renews a heartbeat, and commits each scenario's results the moment it finishes.
@@ -171,6 +188,8 @@ Recorded because several were silent — they produced plausible-looking output 
 | Dashboard promise-date accuracy counted *any* extracted date as correct | `--simulate` exact-matched against ground truth; the dashboard checked `date is not None`. A wrong date scored as a hit. Both now call `shared/eval/metrics.py`. |
 | "Injection resisted" had three different definitions | `--simulate` checked for a fabricated commitment; the runner and `/results` only checked for hallucinated figures — so an agent that logged the injected promise-to-pay still "held". One definition now, which also counts compliance violations (agreeing to a customer-supplied discount is not a hallucination, but it is a breach). |
 | Experiment results written only after the whole run | `BackgroundTasks` is in-memory: a restart or Render spin-down mid-run lost every scenario and left the row `running` forever. |
+| A due call could be pre-empted by a reminder email to the same customer | Found running the workflow on the real 500-invoice ledger: a pass reported 4 calls due and the queue was empty. Invoices were ticked in arbitrary order, so a low-priority email went out first and the minimum contact gap then blocked the urgent call. Now ticked in priority order, one contact per customer per pass. |
+| Voice agent always dialled the top of the static CSV queue | Every run called the same invoice regardless of what the last call achieved. Now it dials from the workflow's queue. |
 | `init_db()` used `create_all` with Alembic installed but unused | `create_all` never alters existing tables, so any new column would be silently missing on every deployed database. |
 
 ---
@@ -179,5 +198,7 @@ Recorded because several were silent — they produced plausible-looking output 
 
 - **React frontend** — optional in the plan; `/docs` is the working UI.
 - **ERP / NetSuite sync, WhatsApp OCR** — plan lists these as v2 stretch goals.
+- **Email and SMS delivery** — the workflow schedules and records these steps (they count toward
+  the contact caps) but does not send them; an email/SMS provider is a drop-in at that one call site.
 - **Payment-date risk model** — plan lists as a next step.
 - **Multi-tenant SaaS scaffolding** — explicitly deprioritised in the plan.

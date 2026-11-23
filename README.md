@@ -3,7 +3,9 @@
 Two connected deliverables for agentic AI in finance back-office automation:
 
 1. **Collections voice agent** — a LiveKit Agents worker that runs dunning calls about overdue
-   invoices, handles interruptions, and extracts promise-to-pay commitments.
+   invoices, handles interruptions, and extracts promise-to-pay commitments. It is driven by a
+   **risk-tiered dunning workflow**: per-tier cadences, contact-frequency and calling-hours
+   rules, a per-invoice state machine, and follow-up tasks opened from every call outcome.
 2. **Prompt A/B testing dashboard** — a FastAPI service that runs two prompt versions against a
    fixed eval set and reports win-rate, latency, hallucination-rate and extraction accuracy.
 
@@ -51,6 +53,23 @@ with one atomic conditional `UPDATE`, renews a heartbeat, and commits results pe
 worker's lease expires and a reaper resumes its run where it stopped. This works the same on SQLite
 and Postgres, with no Redis to run.
 
+**Dunning is a policy, not a loop.** [`workflow/dunning_policy.yaml`](workflow/dunning_policy.yaml)
+is the whole playbook as data: a cadence per risk tier (email → call → SMS → escalation to a
+person), weekly contact and call caps, a minimum gap between contacts, and calling hours in the
+*customer's* timezone. A step that would break a rule is deferred, never skipped or sent early. Every
+cadence must end in escalation, so nothing loops forever, and the file is validated at startup.
+
+**Every call outcome opens the right follow-up.** A per-invoice state machine
+([`workflow/state_machine.py`](workflow/state_machine.py), pure functions) routes a promise to a
+`verify_payment` task due after a grace period, a dispute to the disputes desk with dunning paused, and
+an "already paid" claim to reconciliation. A lapsed promise restarts the cadence one risk tier harsher,
+and repeated broken promises escalate to a person. Tasks are idempotent (deduped per call), task
+resolutions drive the invoice onward, and every transition lands in an append-only audit trail.
+
+**Two independent signals per call.** The agent records outcomes live through tool calls; a separate
+extractor reads the transcript afterwards. When they disagree, a QA task opens rather than one silently
+winning.
+
 **Multi-currency risk tiering is INR-normalised.** A 12,750 USD invoice (~₹11 lakh) must not score
 as less material than a ₹300,000 one. `amount_in_inr()` converts before any materiality check.
 
@@ -88,7 +107,20 @@ Runs are durable. Each scenario's results are committed as soon as it finishes, 
 readable mid-run. If the process restarts, the run resumes from the last stored scenario rather than
 starting over or hanging in `running` (see `ab_dashboard/jobs.py`).
 
-### 2. The voice agent
+### 2. The dunning workflow
+
+| Step | Call |
+|---|---|
+| 1 | `POST /dunning/sync` — load the ledger (the generated dataset) into the workflow |
+| 2 | `POST /dunning/tick` — run a scheduler pass now (the app also runs one every 5 minutes) |
+| 3 | `GET /dunning/queue` — calls the playbook wants that the contact rules allow right now |
+| 4 | `POST /dunning/invoices/{id}/outcomes` — record a call outcome (the voice agent does this itself) |
+| 5 | `GET /tasks?assignee=disputes` — a team's work queue; `PATCH /tasks/{id}` to resolve |
+| 6 | `GET /dunning/invoices/{id}` — state, tasks, contact history and the full audit trail |
+
+`POST /dunning/invoices/{id}/payments` stands in for the ERP or bank feed.
+
+### 3. The voice agent
 
 ```bash
 # Text-only sweep over the eval set. Deterministic, no audio stack, CI-safe.
@@ -101,6 +133,10 @@ uv run python -m voice_agent.agent console
 
 `console` mode runs in your terminal with your own mic and speakers — no LiveKit server, no cloud
 minutes.
+
+Once the workflow is synced, the agent dials the top of its call queue, at the invoice's current tier
+and outstanding balance, and feeds the outcome back in. If nothing is due it calls no one. Set
+`CALL_INVOICE_ID` to pin a specific invoice for a demo.
 
 ---
 
@@ -131,9 +167,10 @@ Switch with `VOICE_PROVIDER=local|cloud`; everything routes through `voice_agent
 ```
 shared/            models, config, LLM failover client, prompt store, judge + rubric
 data/              dataset generator, eval_scenarios.yaml (18 scenarios, 2 adversarial)
-voice_agent/       dunning logic, prompts/, LiveKit agent, simulator, extractor, call logger
+voice_agent/       risk tiering, prompts/, LiveKit agent, simulator, extractor, call logger
+workflow/          dunning policy YAML, contact scheduler, state machine, workflow service
 ab_dashboard/      FastAPI app, models + Alembic migrations, experiment runner, durable jobs, routers
-tests/             198 tests, no network calls
+tests/             287 tests, no network calls
 ```
 
 ## Data provenance
@@ -182,7 +219,7 @@ resisted them.
 ## Tests
 
 ```bash
-uv run pytest                    # 198 tests, fully mocked, no API calls
+uv run pytest                    # 287 tests, fully mocked, no API calls
 uv run ruff check .
 ```
 

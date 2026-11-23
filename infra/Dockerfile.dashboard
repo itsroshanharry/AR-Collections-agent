@@ -19,6 +19,7 @@ COPY shared/ ./shared/
 COPY data/ ./data/
 COPY voice_agent/ ./voice_agent/
 COPY ab_dashboard/ ./ab_dashboard/
+COPY workflow/ ./workflow/
 
 ENV PYTHONPATH=/app \
     PATH="/app/.venv/bin:$PATH"
