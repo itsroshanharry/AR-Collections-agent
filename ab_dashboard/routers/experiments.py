@@ -3,31 +3,24 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ab_dashboard import jobs
 from ab_dashboard.db import (
     ExperimentRow,
     ExperimentStatus,
     PromptVersionRow,
     ResultRow,
     get_session,
-    get_sessionmaker,
 )
-from ab_dashboard.experiment_runner import (
-    ScenarioComparison,
-    VariantRun,
-    VariantSummary,
-    run_experiment,
-)
+from ab_dashboard.experiment_runner import VariantSummary
 from shared.config import get_settings
-from shared.eval.eval_set import load_eval_set
-from shared.llm_client import LLMClient
-from shared.models import PromptVersion, Tone
+from shared.eval.metrics import injection_held
 
 logger = logging.getLogger(__name__)
 
@@ -101,18 +94,6 @@ class ResultsOut(BaseModel):
     per_scenario: list[ScenarioResultOut]
 
 
-def _row_to_prompt(row: PromptVersionRow) -> PromptVersion:
-    return PromptVersion(
-        id=row.id,
-        name=row.name,
-        version=row.version,
-        tone=Tone(row.tone),
-        template=row.template,
-        changelog=row.changelog,
-        applies_to_tier=list(row.applies_to_tier or []),
-    )
-
-
 def _experiment_out(row: ExperimentRow) -> ExperimentOut:
     return ExperimentOut(
         id=row.id,
@@ -128,108 +109,16 @@ def _experiment_out(row: ExperimentRow) -> ExperimentOut:
     )
 
 
-def _persist_run(experiment_id: str, comparison: ScenarioComparison, run: VariantRun) -> ResultRow:
-    score = run.score
-    return ResultRow(
-        experiment_id=experiment_id,
-        scenario_id=comparison.scenario_id,
-        variant_label=run.variant_label,
-        prompt_id=run.prompt_id,
-        transcript=run.transcript,
-        scores={k.value: v for k, v in (score.scores if score else {}).items()},
-        composite=run.composite,
-        hallucinated=run.hallucinated,
-        hallucinated_figures=list(score.hallucinated_figures) if score else [],
-        compliance_violations=list(score.compliance_violations) if score else [],
-        judge_rationale=score.rationale if score else "",
-        extracted_outcome=run.extracted_outcome.value if run.extracted_outcome else None,
-        expected_outcome=comparison.expected_outcome.value,
-        outcome_match=run.extracted_outcome == comparison.expected_outcome,
-        promise_date_match=(
-            run.promise_to_pay_date is not None
-            if comparison.expected_outcome.value == "promise_to_pay"
-            else None
-        ),
-        total_latency_ms=run.total_latency_ms,
-        mean_turn_latency_ms=run.mean_turn_latency_ms,
-        provider=run.provider,
-        is_adversarial=comparison.is_adversarial,
-        error=run.error,
-        pairwise_winner=comparison.pairwise_winner,
-        pairwise_reason=comparison.pairwise_reason,
-        presented_a_first=comparison.presented_a_first,
-    )
-
-
-async def _execute(experiment_id: str, payload: ExperimentIn) -> None:
-    """Background worker. Owns its own session - the request's session is long gone."""
-    settings = get_settings()
-    sessionmaker = get_sessionmaker()
-    client = LLMClient(settings)
-
-    try:
-        async with sessionmaker() as session:
-            experiment = await session.get(ExperimentRow, experiment_id)
-            if experiment is None:
-                return
-            row_a = await session.get(PromptVersionRow, payload.variant_a_id)
-            row_b = await session.get(PromptVersionRow, payload.variant_b_id)
-            if row_a is None or row_b is None:
-                experiment.status = ExperimentStatus.FAILED
-                experiment.error = "One or both prompt versions no longer exist."
-                await session.commit()
-                return
-            prompt_a, prompt_b = _row_to_prompt(row_a), _row_to_prompt(row_b)
-
-            scenarios = load_eval_set()
-            if payload.limit:
-                scenarios = scenarios[: payload.limit]
-
-            experiment.status = ExperimentStatus.RUNNING
-            experiment.scenario_count = len(scenarios)
-            await session.commit()
-
-        outcome = await run_experiment(
-            client,
-            prompt_a,
-            prompt_b,
-            scenarios,
-            max_concurrency=settings.max_concurrent_llm_calls,
-            seed=payload.seed,
-        )
-
-        async with sessionmaker() as session:
-            for comparison in outcome.comparisons:
-                session.add(_persist_run(experiment_id, comparison, comparison.a))
-                session.add(_persist_run(experiment_id, comparison, comparison.b))
-            experiment = await session.get(ExperimentRow, experiment_id)
-            if experiment:
-                experiment.status = ExperimentStatus.COMPLETED
-                experiment.completed_count = len(outcome.comparisons)
-                experiment.completed_at = datetime.now(UTC)
-            await session.commit()
-        logger.info("Experiment %s completed", experiment_id)
-
-    except Exception as exc:  # noqa: BLE001 - must record the failure, not vanish
-        logger.exception("Experiment %s failed", experiment_id)
-        async with sessionmaker() as session:
-            experiment = await session.get(ExperimentRow, experiment_id)
-            if experiment:
-                experiment.status = ExperimentStatus.FAILED
-                experiment.error = f"{type(exc).__name__}: {exc}"
-                experiment.completed_at = datetime.now(UTC)
-            await session.commit()
-    finally:
-        await client.aclose()
-
-
 @router.post("", response_model=ExperimentOut, status_code=status.HTTP_202_ACCEPTED)
 async def create_experiment(
     payload: ExperimentIn,
-    background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> ExperimentOut:
-    """Launch an A-vs-B run over the eval set. Returns immediately; poll for status."""
+    """Launch an A-vs-B run over the eval set. Returns immediately; poll for status.
+
+    The run is durable: results are saved per scenario as they finish, and if the
+    process restarts mid-run, the run resumes from the last stored scenario.
+    """
     if payload.variant_a_id == payload.variant_b_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "variant_a_id and variant_b_id must differ"
@@ -251,12 +140,16 @@ async def create_experiment(
         variant_a_id=payload.variant_a_id,
         variant_b_id=payload.variant_b_id,
         eval_set=payload.eval_set,
+        seed=payload.seed,
+        scenario_limit=payload.limit,
         status=ExperimentStatus.PENDING,
     )
     session.add(experiment)
     await session.commit()
 
-    background.add_task(_execute, experiment.id, payload)
+    # If another worker's reaper gets to it first, that is fine: it runs there instead.
+    await jobs.launch(experiment.id)
+    await session.refresh(experiment)
     return _experiment_out(experiment)
 
 
@@ -298,14 +191,25 @@ def _summary_out(summary: VariantSummary, total: int) -> VariantSummaryOut:
     )
 
 
+def _held(row: ResultRow) -> bool:
+    return injection_held(
+        errored=row.error is not None,
+        hallucinated=row.hallucinated,
+        extracted_outcome=row.extracted_outcome,
+        compliance_violations=row.compliance_violations or (),
+    )
+
+
 @router.get("/{experiment_id}/results", response_model=ResultsOut)
 async def experiment_results(
     experiment_id: str, session: AsyncSession = Depends(get_session)
 ) -> ResultsOut:
-    """Aggregate a completed experiment from its persisted rows.
+    """Aggregate an experiment from its persisted rows.
 
     Recomputed from stored results rather than cached at write time, so the headline
-    numbers can always be reconciled against the individual transcripts.
+    numbers can always be reconciled against the individual transcripts. Results are
+    stored per scenario as they finish, so this also works on a run still in progress;
+    check `status` before treating the numbers as final.
     """
     experiment = await session.get(ExperimentRow, experiment_id)
     if not experiment:
@@ -376,7 +280,8 @@ async def experiment_results(
         for r in ok:
             for k, v in (r.scores or {}).items():
                 dims.setdefault(k, []).append(v)
-        date_cases = [r for r in ok if r.expected_outcome == "promise_to_pay"]
+        # promise_date_match is None for scenarios with no ground-truth date.
+        date_cases = [r for r in ok if r.promise_date_match is not None]
         return VariantSummaryOut(
             prompt_id=subset[0].prompt_id if subset else "",
             label=label,
@@ -425,8 +330,8 @@ async def experiment_results(
         ties=wins["tie"],
         variant_a=summary_a,
         variant_b=summary_b,
-        adversarial_held_a=sum(1 for p in adversarial if not p["A"].hallucinated),
-        adversarial_held_b=sum(1 for p in adversarial if not p["B"].hallucinated),
+        adversarial_held_a=sum(1 for p in adversarial if _held(p["A"])),
+        adversarial_held_b=sum(1 for p in adversarial if _held(p["B"])),
         verdict=verdict,
         per_scenario=per_scenario,
     )

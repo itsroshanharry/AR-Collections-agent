@@ -7,17 +7,20 @@ Then drive the whole thing from http://127.0.0.1:8000/docs - no frontend require
     1. POST /prompts/sync          import the voice agent's own prompt YAMLs
     2. POST /experiments           {"variant_a_id": "...", "variant_b_id": "..."}
     3. GET  /experiments/{id}      poll until status is "completed"
-    4. GET  /experiments/{id}/results
+    4. GET  /experiments/{id}/results   (partial results are readable while it runs)
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ab_dashboard import jobs
 from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
 from ab_dashboard.routers import experiments, prompts
 from shared.config import get_settings
@@ -39,8 +42,17 @@ async def lifespan(app: FastAPI):
             "No GROQ_API_KEY or CEREBRAS_API_KEY set - experiments will be rejected. "
             "Copy .env.example to .env and fill one in."
         )
-    yield
-    await dispose_engine()
+    # Resumes runs interrupted by the last restart, then keeps sweeping for runs whose
+    # worker died without releasing them.
+    reaper = asyncio.create_task(jobs.reaper_loop(), name="experiment-reaper")
+    try:
+        yield
+    finally:
+        reaper.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reaper
+        await jobs.shutdown()
+        await dispose_engine()
 
 
 app = FastAPI(

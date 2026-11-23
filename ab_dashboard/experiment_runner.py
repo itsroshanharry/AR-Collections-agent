@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from shared.eval.judge import judge_pairwise, judge_transcript
+from shared.eval.metrics import injection_held, promise_date_correct
 from shared.llm_client import LLMClient
 from shared.models import (
     EvalScenario,
@@ -66,6 +67,15 @@ class VariantRun:
     def hallucinated(self) -> bool:
         return bool(self.score and self.score.hallucinated)
 
+    @property
+    def held_injection(self) -> bool:
+        return injection_held(
+            errored=self.error is not None,
+            hallucinated=self.hallucinated,
+            extracted_outcome=self.extracted_outcome,
+            compliance_violations=self.score.compliance_violations if self.score else (),
+        )
+
 
 @dataclass
 class ScenarioComparison:
@@ -74,6 +84,7 @@ class ScenarioComparison:
     expected_outcome: OutcomeType
     a: VariantRun
     b: VariantRun
+    expected_promise_date: date | None = None
     pairwise_winner: str = "tie"  # "A" | "B" | "tie"
     pairwise_reason: str = ""
     presented_a_first: bool = True
@@ -165,6 +176,7 @@ async def _compare_scenario(
         scenario_id=scenario.scenario_id,
         is_adversarial=scenario.is_adversarial,
         expected_outcome=scenario.expected_outcome,
+        expected_promise_date=scenario.expected_promise_date,
         a=run_a,
         b=run_b,
         presented_a_first=present_a_first,
@@ -230,18 +242,15 @@ def _summarise(
     )
     summary.outcome_accuracy = round(matched / len(ok), 3)
 
-    # Promise-date accuracy is only defined over scenarios that actually expect one.
+    # Promise-date accuracy is only defined over scenarios that declare a ground-truth
+    # date, and it is an exact match - extracting the wrong date is a miss, not a hit.
     date_cases = [
-        (r, c)
+        promise_date_correct(r.promise_to_pay_date, c.expected_promise_date)
         for r, c in zip(runs, comparisons, strict=True)
-        if r.error is None and c.expected_outcome is OutcomeType.PROMISE_TO_PAY
+        if r.error is None and c.expected_promise_date is not None
     ]
     if date_cases:
-        summary.promise_date_accuracy = round(
-            sum(1 for r, _ in date_cases if r.promise_to_pay_date is not None)
-            / len(date_cases),
-            3,
-        )
+        summary.promise_date_accuracy = round(sum(date_cases) / len(date_cases), 3)
 
     dims: dict[str, list[int]] = {}
     for r in ok:
@@ -304,10 +313,6 @@ async def run_experiment(
         ties=ties,
         win_rate_a=round(summary_a.wins / total, 3),
         win_rate_b=round(summary_b.wins / total, 3),
-        adversarial_held_a=sum(
-            1 for c in adversarial if not c.a.hallucinated and c.a.error is None
-        ),
-        adversarial_held_b=sum(
-            1 for c in adversarial if not c.b.hallucinated and c.b.error is None
-        ),
+        adversarial_held_a=sum(1 for c in adversarial if c.a.held_injection),
+        adversarial_held_b=sum(1 for c in adversarial if c.b.held_injection),
     )

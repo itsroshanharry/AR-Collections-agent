@@ -99,7 +99,13 @@ def build_server():
     from livekit import agents
     from livekit.agents import Agent, AgentServer, AgentSession, function_tool, inference
 
-    from voice_agent.voice_factory import build_llm, build_stt, build_tts, build_vad
+    from voice_agent.voice_factory import (
+        build_llm,
+        build_stt,
+        build_tts,
+        build_vad,
+        dialogue_provider_label,
+    )
 
     settings = get_settings()
 
@@ -176,6 +182,9 @@ def build_server():
         )
 
         agent = CollectionsAgent(invoice, prompt)
+        # Recorded on the call log so a voice call's scores can be attributed to the model
+        # that actually spoke, the same way simulate mode records it per turn.
+        dialogue_provider = dialogue_provider_label(settings)
         session = AgentSession(
             vad=build_vad(),
             stt=build_stt(settings),
@@ -196,14 +205,18 @@ def build_server():
 
         # Score and persist once the call ends.
         async def _finalise() -> None:
-            await _score_and_log_call(invoice, prompt, session, agent, mode="voice")
+            await _score_and_log_call(
+                invoice, prompt, session, agent, mode="voice", provider=dialogue_provider
+            )
 
         ctx.add_shutdown_callback(_finalise)
 
     return server
 
 
-async def _score_and_log_call(invoice, prompt, session, agent, *, mode: str) -> None:
+async def _score_and_log_call(
+    invoice, prompt, session, agent, *, mode: str, provider: str
+) -> None:
     """Extract the outcome, judge the transcript, and write it to call_logs."""
     from ab_dashboard.db import init_db
     from shared.eval.judge import judge_transcript
@@ -242,7 +255,13 @@ async def _score_and_log_call(invoice, prompt, session, agent, *, mode: str) -> 
             assigned_tone=tone_for_tier(classify_risk(invoice)).value,
         )
         await log_call(
-            invoice, prompt.id, transcript, outcome, score, mode=mode, provider="groq"
+            invoice,
+            prompt.id,
+            transcript,
+            outcome,
+            score,
+            mode=mode,
+            provider=provider,
         )
         health = await prompt_health(prompt.id)
         logger.info("Prompt %s health: %s", prompt.id, health.reason)
@@ -265,6 +284,7 @@ async def run_simulation(
     from ab_dashboard.db import init_db
     from shared.eval.eval_set import load_eval_set
     from shared.eval.judge import judge_transcript
+    from shared.eval.metrics import injection_held, promise_date_correct
     from shared.llm_client import LLMClient
     from voice_agent.call_logger import log_call
     from voice_agent.outcome_extractor import extract_outcome
@@ -323,15 +343,21 @@ async def run_simulation(
             match = outcome.outcome == scenario.expected_outcome
             correct += match
 
-            if scenario.expected_promise_date:
+            date_ok = promise_date_correct(
+                outcome.promise_to_pay_date, scenario.expected_promise_date
+            )
+            if date_ok is not None:
                 date_expected += 1
-                if outcome.promise_to_pay_date == scenario.expected_promise_date:
-                    date_correct += 1
+                date_correct += date_ok
 
             if scenario.is_adversarial:
                 adversarial_total += 1
-                # Held = did not hallucinate and did not fabricate a commitment.
-                if not score.hallucinated and outcome.outcome.value != "promise_to_pay":
+                if injection_held(
+                    errored=False,
+                    hallucinated=score.hallucinated,
+                    extracted_outcome=outcome.outcome,
+                    compliance_violations=score.compliance_violations,
+                ):
                     injections_held += 1
 
             flag = "OK " if match else "MISS"

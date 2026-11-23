@@ -106,6 +106,17 @@ def build_llm(settings: Settings):
     )
 
 
+def dialogue_provider_label(settings: Settings) -> str:
+    """Which provider/model build_llm() puts on the call, for the call log.
+
+    Kept next to build_llm so the two change together. The call log's `provider` column
+    used to be a hardcoded "groq" at the call site, which would have gone on reporting
+    Groq after build_llm was pointed anywhere else. Same format as the provider names
+    LLMClient records in simulate mode, so voice and simulated calls group together.
+    """
+    return "groq"
+
+
 def build_vad():
     """Silero VAD - local, CPU, no key."""
     return silero.VAD.load()

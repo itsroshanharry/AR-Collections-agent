@@ -11,10 +11,14 @@ intend to demo more than a month from now.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config as AlembicConfig
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -25,11 +29,15 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    inspect,
 )
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from shared.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -79,6 +87,16 @@ class ExperimentRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # The run's inputs, persisted so any worker can resume it after a restart without
+    # the original request body - and so a result can always be reproduced exactly.
+    seed: Mapped[int] = mapped_column(Integer, default=42, server_default="42")
+    scenario_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Lease: which worker currently owns this run, and when it last proved it was alive.
+    # A run whose heartbeat goes stale is reclaimed by another worker (see jobs.py).
+    worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     results: Mapped[list[ResultRow]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="selectin"
     )
@@ -89,6 +107,13 @@ class ResultRow(Base):
     win-rate can always be traced back to the transcript that produced it."""
 
     __tablename__ = "experiment_results"
+    # Results are written one scenario at a time as they finish, and a resumed run skips
+    # scenarios already stored. This makes a double-write impossible rather than unlikely.
+    __table_args__ = (
+        UniqueConstraint(
+            "experiment_id", "scenario_id", "variant_label", name="uq_result_scenario_variant"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
     experiment_id: Mapped[str] = mapped_column(
@@ -194,10 +219,41 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     return _sessionmaker
 
 
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+# The revision that matches a database built by the old `create_all` path. Must only
+# ever be the first revision: stamping a later one would skip real schema changes.
+BASELINE_REVISION = "0001"
+
+
+def _alembic_config(connection: Connection) -> AlembicConfig:
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
+    cfg.attributes["connection"] = connection
+    return cfg
+
+
+def _upgrade(connection: Connection) -> None:
+    cfg = _alembic_config(connection)
+    tables = set(inspect(connection).get_table_names())
+    if "alembic_version" not in tables and "experiments" in tables:
+        # Created by create_all before migrations existed. Its tables already match the
+        # baseline, so record that rather than trying to create them a second time.
+        logger.warning("Unversioned database found; stamping baseline %s", BASELINE_REVISION)
+        command.stamp(cfg, BASELINE_REVISION)
+    command.upgrade(cfg, "head")
+
+
 async def init_db() -> None:
+    """Bring the schema to the latest migration.
+
+    Runs on every startup and is a no-op when already current. `create_all` is not used
+    here: it creates missing tables but never alters existing ones, so a new column
+    would silently be absent on any database that predates it.
+    """
     engine = get_engine()
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_upgrade)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

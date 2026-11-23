@@ -46,6 +46,11 @@ before moving on. Cerebras' free tier caps context at 8K, so oversized prompts s
 attempting and failing. Every response records which provider served it — a mid-run failover changes
 the model, which would otherwise silently confound an A/B result.
 
+**Experiments survive restarts.** The database doubles as the job queue: a worker takes a lease
+with one atomic conditional `UPDATE`, renews a heartbeat, and commits results per scenario. A dead
+worker's lease expires and a reaper resumes its run where it stopped. This works the same on SQLite
+and Postgres, with no Redis to run.
+
 **Multi-currency risk tiering is INR-normalised.** A 12,750 USD invoice (~₹11 lakh) must not score
 as less material than a ₹300,000 one. `amount_in_inr()` converts before any materiality check.
 
@@ -74,10 +79,14 @@ Drive it entirely from <http://127.0.0.1:8000/docs> — no frontend needed:
 |---|---|
 | 1 | `POST /prompts/sync` — import the agent's prompt YAMLs |
 | 2 | `POST /experiments` — `{"variant_a_id": "collections_formal_v1", "variant_b_id": "collections_friendly_v2"}` |
-| 3 | `GET /experiments/{id}` — poll until `status` is `completed` |
+| 3 | `GET /experiments/{id}` — poll until `status` is `completed` (`completed_count` advances per scenario) |
 | 4 | `GET /experiments/{id}/results` — win-rate, latency, hallucination-rate, per-scenario breakdown |
 
 Add `{"limit": 3}` to `POST /experiments` for a fast smoke run instead of all 18 scenarios.
+
+Runs are durable. Each scenario's results are committed as soon as it finishes, so `/results` is
+readable mid-run. If the process restarts, the run resumes from the last stored scenario rather than
+starting over or hanging in `running` (see `ab_dashboard/jobs.py`).
 
 ### 2. The voice agent
 
@@ -123,8 +132,8 @@ Switch with `VOICE_PROVIDER=local|cloud`; everything routes through `voice_agent
 shared/            models, config, LLM failover client, prompt store, judge + rubric
 data/              dataset generator, eval_scenarios.yaml (18 scenarios, 2 adversarial)
 voice_agent/       dunning logic, prompts/, LiveKit agent, simulator, extractor, call logger
-ab_dashboard/      FastAPI app, SQLAlchemy models, experiment runner, routers
-tests/             137 tests, no network calls
+ab_dashboard/      FastAPI app, models + Alembic migrations, experiment runner, durable jobs, routers
+tests/             198 tests, no network calls
 ```
 
 ## Data provenance
@@ -173,9 +182,17 @@ resisted them.
 ## Tests
 
 ```bash
-uv run pytest                    # 137 tests, fully mocked, no API calls
+uv run pytest                    # 198 tests, fully mocked, no API calls
 uv run ruff check .
 ```
+
+Schema changes go through Alembic. The app applies migrations on startup; to author one:
+
+```bash
+uv run alembic revision --autogenerate -m "describe the change"
+```
+
+`tests/test_migrations_and_jobs.py` fails if the models and the migrations disagree.
 
 To verify Postgres compatibility before deploying:
 

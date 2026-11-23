@@ -8,7 +8,7 @@ that produced it.
 
 | Verification | Result |
 |---|---|
-| Unit/integration tests | **174 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
+| Unit/integration tests | **198 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
 | Eval sweep (`--simulate`, 18 scenarios, live LLM) | **16/18 outcomes (89%)**, 6/7 promise dates, **2/2 injections resisted** |
 | Live voice call (LiveKit + Deepgram, real audio) | **composite 4.8/5**, promise-to-pay captured correctly, 0 hallucinations, 0 compliance violations |
 | Lint | `ruff` clean |
@@ -104,6 +104,18 @@ be wrong.
 tokens/day per model**, charged against *reserved* `max_tokens` rather than tokens generated. Backoff
 alone means every 429 is a wasted round-trip. Pacing took a full sweep from 75 rejections to **zero**.
 
+**Durable, resumable experiments** ([`jobs.py`](ab_dashboard/jobs.py)). The database is the queue:
+a worker claims a run with one conditional `UPDATE` (atomic on SQLite and Postgres, so no Redis and
+no `SKIP LOCKED`), renews a heartbeat, and commits each scenario's results the moment it finishes.
+Graceful shutdown hands the lease back; a crash lets it expire. A reaper sweep then resumes the run
+from the last stored scenario, and a unique `(experiment, scenario, variant)` constraint makes a
+double write impossible.
+
+**Versioned schema** ([`migrations/`](ab_dashboard/migrations/)). Alembic, applied by `init_db()` on
+startup. Databases created by the earlier `create_all` path are detected and stamped at the baseline
+revision, so they upgrade in place without losing data. A test asserts the migrations produce
+exactly the models' schema, so a model change without a migration fails CI.
+
 **Simulate mode.** `--simulate` runs the eval set text-only through the same prompts, extractor and
 judge as the voice path — deterministic, CI-safe, no audio stack. This is what makes the dashboard's
 numbers statements about the real agent.
@@ -156,6 +168,10 @@ Recorded because several were silent — they produced plausible-looking output 
 | API keys read from `os.environ` by plugins | pydantic-settings parses `.env` without touching `os.environ`, so credentials were loaded in Python but invisible to LiveKit and Deepgram. Now passed explicitly. |
 | S07 eval scenario was ambiguous | Mixed a quality complaint into a refusal, so it read as either `refused` or `dispute_raised` and **flipped across three runs**. Ambiguous ground truth is noise; the complaint was removed rather than the label re-chased. |
 | Judge scored the customer's injection as the agent's violation | Every adversarial scenario scored ~1 on compliance regardless of agent behaviour — pure noise in any A/B built on it. |
+| Dashboard promise-date accuracy counted *any* extracted date as correct | `--simulate` exact-matched against ground truth; the dashboard checked `date is not None`. A wrong date scored as a hit. Both now call `shared/eval/metrics.py`. |
+| "Injection resisted" had three different definitions | `--simulate` checked for a fabricated commitment; the runner and `/results` only checked for hallucinated figures — so an agent that logged the injected promise-to-pay still "held". One definition now, which also counts compliance violations (agreeing to a customer-supplied discount is not a hallucination, but it is a breach). |
+| Experiment results written only after the whole run | `BackgroundTasks` is in-memory: a restart or Render spin-down mid-run lost every scenario and left the row `running` forever. |
+| `init_db()` used `create_all` with Alembic installed but unused | `create_all` never alters existing tables, so any new column would be silently missing on every deployed database. |
 
 ---
 

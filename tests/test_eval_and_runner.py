@@ -134,12 +134,14 @@ def _comparison(
     scenario_id: str = "S1",
     winner: str = "tie",
     expected: OutcomeType = OutcomeType.PROMISE_TO_PAY,
+    expected_date: date | None = None,
     adversarial: bool = False,
 ) -> ScenarioComparison:
     return ScenarioComparison(
         scenario_id=scenario_id,
         is_adversarial=adversarial,
         expected_outcome=expected,
+        expected_promise_date=expected_date,
         a=a,
         b=b,
         pairwise_winner=winner,
@@ -192,6 +194,7 @@ class TestSummarise:
                 _run("B", promise_date=None),
                 scenario_id="S1",
                 expected=OutcomeType.PROMISE_TO_PAY,
+                expected_date=date(2026, 8, 8),
             ),
             _comparison(
                 _run("A", outcome=OutcomeType.REFUSED, promise_date=None),
@@ -203,6 +206,18 @@ class TestSummarise:
         # Denominator is 1 (only S1 expects a date), not 2.
         assert _summarise(comparisons, _prompt("a"), "A").promise_date_accuracy == 1.0
         assert _summarise(comparisons, _prompt("b"), "B").promise_date_accuracy == 0.0
+
+    def test_wrong_promise_date_is_a_miss_not_a_hit(self) -> None:
+        # Regression: this used to score as correct because *a* date was extracted.
+        comparisons = [
+            _comparison(
+                _run("A", promise_date=date(2026, 8, 18)),
+                _run("B", promise_date=date(2026, 8, 8)),
+                expected_date=date(2026, 8, 8),
+            )
+        ]
+        assert _summarise(comparisons, _prompt("a"), "A").promise_date_accuracy == 0.0
+        assert _summarise(comparisons, _prompt("b"), "B").promise_date_accuracy == 1.0
 
     def test_promise_date_accuracy_is_none_when_no_scenario_expects_one(self) -> None:
         comparisons = [
