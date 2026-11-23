@@ -416,11 +416,18 @@ class TickReport:
     escalated: int = 0
     promises_broken: int = 0
     retiered: int = 0
+    # Contacts not made because a higher-priority invoice of the same customer leads.
+    held_for_customer: int = 0
     conflicts: int = 0
 
 
 async def _tick_one(
-    session: AsyncSession, invoice_id: str, report: TickReport, policy: DunningPolicy, now: datetime
+    session: AsyncSession,
+    invoice_id: str,
+    report: TickReport,
+    policy: DunningPolicy,
+    now: datetime,
+    leads: set[str],
 ) -> None:
     row = await _load(session, invoice_id)
     today = local_today(row, policy, now)
@@ -435,7 +442,18 @@ async def _tick_one(
         report.retiered += 1
 
     planned = await _reschedule(session, row, policy, now)
-    if planned is None or planned.at > now:
+    if planned is None:
+        return
+    if planned.channel is not Channel.ESCALATE:
+        # One conversation per customer: their highest-priority invoice in active
+        # dunning leads, and their other invoices wait behind it. Without this, a
+        # low-priority reminder email could land first and push the customer's urgent
+        # call out by the minimum contact gap.
+        if row.customer_id in leads:
+            report.held_for_customer += planned.at <= now
+            return
+        leads.add(row.customer_id)
+    if planned.at > now:
         return
 
     if planned.channel is Channel.ESCALATE:
@@ -476,20 +494,30 @@ async def tick(*, now: datetime | None = None, policy: DunningPolicy | None = No
     policy = policy or get_policy()
     report = TickReport()
     async with get_sessionmaker()() as session:
-        ids = list(
+        rows = list(
             (
                 await session.execute(
-                    select(InvoiceStateRow.invoice_id).where(
+                    select(InvoiceStateRow).where(
                         InvoiceStateRow.state != DunningState.CLOSED.value
                     )
                 )
             ).scalars()
         )
-    for invoice_id in ids:
+    # Highest priority first, so each customer's most urgent invoice claims their
+    # contact for this pass.
+    ordered = sorted(
+        rows,
+        key=lambda r: (
+            -priority_score(effective_invoice(r, local_today(r, policy, now))),
+            r.invoice_id,
+        ),
+    )
+    leads: set[str] = set()
+    for invoice_id in (r.invoice_id for r in ordered):
         report.examined += 1
         try:
             async with get_sessionmaker()() as session:
-                await _tick_one(session, invoice_id, report, policy, now)
+                await _tick_one(session, invoice_id, report, policy, now, leads)
                 await session.commit()
         except StaleDataError:
             report.conflicts += 1
@@ -815,9 +843,7 @@ async def invoice_detail(invoice_id: str, *, now: datetime | None = None) -> Inv
 
 async def has_invoices() -> bool:
     async with get_sessionmaker()() as session:
-        return (
-            await session.scalar(select(InvoiceStateRow.invoice_id).limit(1))
-        ) is not None
+        return (await session.scalar(select(InvoiceStateRow.invoice_id).limit(1))) is not None
 
 
 async def list_tasks(

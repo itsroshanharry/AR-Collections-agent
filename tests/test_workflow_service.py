@@ -97,11 +97,24 @@ class TestTick:
         report = await service.tick(now=NOW)
         assert (report.calls_due, report.emails_sent) == (1, 0)
 
-    async def test_caps_are_per_customer_not_per_invoice(self, db) -> None:
+    async def test_one_conversation_per_customer(self, db) -> None:
         two = [medium("INV-A", customer="C-1"), medium("INV-B", customer="C-1")]
         await service.sync_invoices(two, now=NOW)
         report = await service.tick(now=NOW)
-        assert report.emails_sent == 1  # second invoice waits out the minimum gap
+        assert report.emails_sent == 1
+        steps = {(await row(db, i)).cadence_step for i in ("INV-A", "INV-B")}
+        assert steps == {0, 1}  # one emailed, the other still waiting its turn
+
+    async def test_urgent_call_is_not_pre_empted_by_a_reminder_email(self, db) -> None:
+        # Regression: found on the real dataset. A customer's low-priority invoice was
+        # emailed in the same pass that their high-priority call came due, and the
+        # minimum contact gap then blocked the call.
+        await service.sync_invoices(
+            [medium("INV-A", customer="C-1"), high("INV-Z", customer="C-1")], now=NOW
+        )
+        report = await service.tick(now=NOW)
+        assert (report.emails_sent, report.calls_due) == (0, 1)
+        assert [d.invoice.invoice_id for d in await service.due_calls(now=NOW)] == ["INV-Z"]
 
     async def test_lapsed_promise_is_broken_and_retiered(self, db) -> None:
         await service.sync_invoices([medium()], now=NOW)
