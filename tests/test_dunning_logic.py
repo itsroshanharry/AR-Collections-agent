@@ -141,3 +141,19 @@ class TestCallQueue:
     def test_respects_limit(self) -> None:
         invoices = [make_invoice(invoice_id=f"I{i}", days_overdue=10 + i) for i in range(10)]
         assert len(build_call_queue(invoices, limit=3)) == 3
+
+
+class TestBrokenPromises:
+    def test_each_broken_promise_bumps_a_tier(self) -> None:
+        inv = make_invoice(days_overdue=10, amount=Decimal("1000"))  # baseline LOW
+        assert classify_risk(inv) is RiskTier.LOW
+        assert classify_risk(inv, broken_promises=1) is RiskTier.MEDIUM
+        assert classify_risk(inv, broken_promises=2) is RiskTier.HIGH
+
+    def test_bump_saturates_at_critical(self) -> None:
+        inv = make_invoice(days_overdue=80, amount=Decimal("1000"))  # baseline HIGH
+        assert classify_risk(inv, broken_promises=5) is RiskTier.CRITICAL
+
+    def test_dispute_cap_still_wins(self) -> None:
+        inv = make_invoice(days_overdue=80, amount=Decimal("1000"), dispute_flag=True)
+        assert classify_risk(inv, broken_promises=3) is RiskTier.MEDIUM

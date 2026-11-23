@@ -60,11 +60,14 @@ def _bump(tier: RiskTier, steps: int = 1) -> RiskTier:
     return _TIER_ORDER[idx]
 
 
-def classify_risk(invoice: Invoice) -> RiskTier:
+def classify_risk(invoice: Invoice, *, broken_promises: int = 0) -> RiskTier:
     """Assign a risk tier from age, materiality and contact history.
 
-    Age sets the baseline; materiality and ignored reminders can escalate it. A
-    disputed invoice is capped at MEDIUM regardless of age - chasing a customer
+    Age sets the baseline; materiality, ignored reminders and broken promises can
+    escalate it. A broken promise-to-pay is the strongest of these signals: the customer
+    engaged, committed to a date, and still did not pay. Each one bumps a tier.
+
+    A disputed invoice is capped at MEDIUM regardless of age - chasing a customer
     aggressively over an amount they have formally contested is both bad practice and,
     in several jurisdictions, actionable.
     """
@@ -84,6 +87,9 @@ def classify_risk(invoice: Invoice) -> RiskTier:
 
     if invoice.reminder_count >= PERSISTENT_REMINDER_COUNT and tier != RiskTier.CRITICAL:
         tier = _bump(tier)
+
+    if broken_promises > 0:
+        tier = _bump(tier, broken_promises)
 
     if invoice.dispute_flag:
         tier = min(tier, RiskTier.MEDIUM, key=_TIER_ORDER.index)
