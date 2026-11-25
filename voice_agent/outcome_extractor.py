@@ -32,7 +32,9 @@ OUTCOME_GUIDANCE = """Choose exactly one outcome:
 - already_paid: the customer states the invoice is already settled.
 - dispute_raised: the customer contests the invoice itself - the amount, the quality of
   what was delivered, or whether it was delivered. Withholding payment *because of* such
-  a complaint is a dispute, not a refusal.
+  a complaint is a dispute, not a refusal. Contesting only PART of the invoice (a
+  quantity, hours or line item billed above what was agreed or ordered) is still a
+  dispute, even if they are willing to pay the undisputed remainder.
 - refused: the customer declined to pay or declined to commit to any date, without
   contesting the invoice itself. Declining to give a date IS a refusal even if they say
   something vague like "I'll pay when I can" - a refusal to commit is still a refusal.
@@ -52,6 +54,9 @@ Deciding between the close ones:
 Rules:
 - promise_to_pay_date must be a date the CUSTOMER stated. If the agent proposed a date
   and the customer never confirmed it, leave it null.
+- For partial_payment, promise_to_pay_date is the specific calendar date the customer
+  committed to for a payment. If they named more than one, use the earliest. Vague
+  timing ("this week", "after that") is not a date.
 - Resolve spoken dates ("the eighth of August") against the reference date given below.
 - promised_amount and disputed_amount: only if an explicit figure was stated.
 - confidence: 0.0 to 1.0, reflecting how unambiguous the customer's commitment was."""
