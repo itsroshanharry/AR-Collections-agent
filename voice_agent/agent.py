@@ -508,9 +508,12 @@ async def run_simulation(
 
 
 def main() -> int:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s"
-    )
+    from shared.observability.logging import configure_logging
+    from shared.observability.tracing import setup_tracing
+
+    settings = get_settings()
+    configure_logging(settings.log_format, settings.log_level)
+    setup_tracing("ar-voice-agent")
 
     # --simulate is handled here, before LiveKit's CLI takes over argv entirely.
     if "--simulate" in sys.argv:

@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -27,11 +28,13 @@ from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
 from ab_dashboard.routers import dunning, experiments, prompts
 from shared.config import get_settings
 from shared.observability import metrics as m
+from shared.observability.logging import configure_logging, request_id_var
+from shared.observability.tracing import setup_tracing, tracer
 from workflow import service as dunning_service
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s"
-)
+_settings = get_settings()
+configure_logging(_settings.log_format, _settings.log_level)
+setup_tracing("ar-dashboard")
 logger = logging.getLogger(__name__)
 
 
@@ -97,20 +100,36 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def http_metrics(request: Request, call_next):
+async def observe_request(request: Request, call_next):
+    """Request id, server span and HTTP metrics for every request.
+
+    The id is taken from X-Request-ID when a proxy set one, so a request can be followed
+    across services; otherwise generated. It is echoed back and stamped on every log line
+    the request produces.
+    """
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
+    token = request_id_var.set(request_id)
     started = time.perf_counter()
     status_code = 500
-    try:
-        response = await call_next(request)
-        status_code = response.status_code
-        return response
-    finally:
-        # The route *template* (/tasks/{task_id}), never the raw path: one series per
-        # endpoint rather than one per task id. Unmatched paths share a single label.
-        route = request.scope.get("route")
-        label = getattr(route, "path", None) or "unmatched"
-        m.HTTP_REQUESTS.labels(request.method, label, str(status_code)).inc()
-        m.HTTP_LATENCY.labels(request.method, label).observe(time.perf_counter() - started)
+    with tracer.start_as_current_span(f"HTTP {request.method}") as span:
+        span.set_attribute("http.request.method", request.method)
+        span.set_attribute("request.id", request_id)
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            # The route *template* (/tasks/{task_id}), never the raw path: one series per
+            # endpoint rather than one per task id. Unmatched paths share a single label.
+            route = request.scope.get("route")
+            label = getattr(route, "path", None) or "unmatched"
+            span.update_name(f"HTTP {request.method} {label}")
+            span.set_attribute("http.route", label)
+            span.set_attribute("http.response.status_code", status_code)
+            m.HTTP_REQUESTS.labels(request.method, label, str(status_code)).inc()
+            m.HTTP_LATENCY.labels(request.method, label).observe(time.perf_counter() - started)
+            request_id_var.reset(token)
 
 
 @app.get("/metrics", tags=["meta"], include_in_schema=False)

@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # tier, where it is the single biggest speed-up available.
     max_concurrent_llm_calls: int = 1
 
+    # --- Observability ---
+    # text for terminals, json for log pipelines (Loki, CloudWatch, Datadog...).
+    log_format: Literal["text", "json"] = "text"
+    log_level: str = "INFO"
+
     # --- Dunning workflow ---
     # Seconds between scheduler passes in the dashboard process. 0 disables the timer;
     # POST /dunning/tick still runs a pass on demand.

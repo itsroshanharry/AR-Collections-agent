@@ -12,8 +12,8 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock* ./
-RUN uv sync --extra dashboard --extra data --no-dev --frozen || \
-    uv sync --extra dashboard --extra data --no-dev
+RUN uv sync --extra dashboard --extra data --extra observability --no-dev --frozen || \
+    uv sync --extra dashboard --extra data --extra observability --no-dev
 
 COPY shared/ ./shared/
 COPY data/ ./data/
