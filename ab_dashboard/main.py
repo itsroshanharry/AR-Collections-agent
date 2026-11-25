@@ -23,6 +23,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from ab_dashboard import health as readiness
 from ab_dashboard import jobs
 from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
 from ab_dashboard.routers import dunning, experiments, prompts
@@ -41,12 +42,15 @@ logger = logging.getLogger(__name__)
 async def _dunning_loop(interval: float) -> None:
     """The dunning scheduler: lapse promises, send due emails, escalate. Every pass is
     per-invoice transactional and safe to run on several workers at once."""
+    state = readiness.scheduler_state
     while True:
         try:
             report = await dunning_service.tick()
+            state.last_success, state.last_error = time.time(), None
             if report.emails_sent or report.escalated or report.promises_broken:
                 logger.info("Dunning tick: %s", report)
-        except Exception:  # noqa: BLE001 - a failed pass must not stop future passes
+        except Exception as exc:  # noqa: BLE001 - a failed pass must not stop future passes
+            state.last_error = f"{type(exc).__name__}: {exc}"
             logger.warning("Dunning tick failed", exc_info=True)
         await asyncio.sleep(interval)
 
@@ -151,9 +155,29 @@ app.include_router(dunning.tasks_router)
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict[str, object]:
+    """Liveness: the process is up and serving. Cheap; touches nothing."""
     settings = get_settings()
     return {
         "status": "ok",
         "llm_provider_configured": settings.has_any_llm_provider,
         "voice_provider": settings.voice_provider,
+    }
+
+
+@app.get("/health/ready", tags=["meta"])
+async def ready(response: Response) -> dict[str, object]:
+    """Readiness: database reachable, schema at head, scheduler alive. 503 if not."""
+    settings = get_settings()
+    checks = {
+        "database": await readiness.check_database(),
+        "schema": await readiness.check_schema(),
+        "scheduler": readiness.check_scheduler(settings.dunning_tick_seconds),
+    }
+    is_ready = all(c.ok for c in checks.values())
+    if not is_ready:
+        response.status_code = 503
+    return {
+        "status": "ready" if is_ready else "not_ready",
+        "checks": {name: c.__dict__ for name, c in checks.items()},
+        "llm_provider_configured": settings.has_any_llm_provider,
     }
