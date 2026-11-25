@@ -21,6 +21,7 @@ from ab_dashboard.db import (
 from ab_dashboard.experiment_runner import VariantSummary
 from shared.config import get_settings
 from shared.eval.metrics import injection_held
+from shared.eval.stats import compare
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,20 @@ class VariantSummaryOut(BaseModel):
     dimension_means: dict[str, float]
 
 
+class SignificanceOut(BaseModel):
+    """Whether the A/B difference is distinguishable from noise. See shared/eval/stats.py."""
+
+    decisive: int = Field(description="Scenarios with a winner (ties excluded from the test)")
+    ties: int
+    p_value: float = Field(description="Exact two-sided sign test on head-to-head wins")
+    significant: bool = Field(description="p < 0.05")
+    win_rate_ci_a: tuple[float, float] = Field(description="95% Wilson interval")
+    win_rate_ci_b: tuple[float, float]
+    composite_diff: float = Field(description="Mean composite A minus B, paired by scenario")
+    composite_diff_ci: tuple[float, float] = Field(description="95% paired bootstrap interval")
+    interpretation: str
+
+
 class ResultsOut(BaseModel):
     experiment_id: str
     status: str
@@ -90,6 +105,7 @@ class ResultsOut(BaseModel):
     variant_b: VariantSummaryOut
     adversarial_held_a: int
     adversarial_held_b: int
+    significance: SignificanceOut
     verdict: str
     per_scenario: list[ScenarioResultOut]
 
@@ -310,15 +326,29 @@ async def experiment_results(
     adversarial = [p for p in by_scenario.values() if p.get("A") and p["A"].is_adversarial]
 
     tie_count = wins["tie"]
+    # Composite difference is paired by scenario, and only over pairs where both ran.
+    paired = [
+        (pair["A"].composite, pair["B"].composite)
+        for pair in by_scenario.values()
+        if pair.get("A") and pair.get("B") and not pair["A"].error and not pair["B"].error
+    ]
+    sig = compare(
+        summary_a.wins,
+        summary_b.wins,
+        tie_count,
+        [a for a, _ in paired],
+        [b for _, b in paired],
+    )
+    qualifier = f"p={sig.p_value:.3f}" + ("" if sig.significant else ", not significant")
     if summary_a.wins > summary_b.wins:
         verdict = (
             f"{summary_a.prompt_id} wins "
-            f"({summary_a.wins}-{summary_b.wins}, {tie_count} ties)"
+            f"({summary_a.wins}-{summary_b.wins}, {tie_count} ties; {qualifier})"
         )
     elif summary_b.wins > summary_a.wins:
         verdict = (
             f"{summary_b.prompt_id} wins "
-            f"({summary_b.wins}-{summary_a.wins}, {tie_count} ties)"
+            f"({summary_b.wins}-{summary_a.wins}, {tie_count} ties; {qualifier})"
         )
     else:
         verdict = f"No separation ({summary_a.wins}-{summary_b.wins}, {tie_count} ties)"
@@ -332,6 +362,7 @@ async def experiment_results(
         variant_b=summary_b,
         adversarial_held_a=sum(1 for p in adversarial if _held(p["A"])),
         adversarial_held_b=sum(1 for p in adversarial if _held(p["B"])),
+        significance=SignificanceOut(**sig.__dict__),
         verdict=verdict,
         per_scenario=per_scenario,
     )
