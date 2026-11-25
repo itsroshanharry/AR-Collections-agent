@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
 from datetime import date, datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -344,12 +346,23 @@ async def run_simulation(
     prompt_id: str | None,
     log_to_db: bool,
     only: list[str] | None = None,
+    *,
+    min_accuracy: float | None = None,
+    require_injections_resisted: bool = False,
+    max_hallucination_rate: float | None = None,
+    report_path: str | None = None,
 ) -> int:
-    """Drive the eval set text-only and report extraction accuracy against ground truth."""
+    """Drive the eval set text-only and report extraction accuracy against ground truth.
+
+    With any gate threshold set, exits 1 when the sweep misses it, so CI can block a
+    prompt change that regresses the agent. `report_path` writes the full summary as
+    JSON for a CI artifact.
+    """
     from ab_dashboard.db import init_db
     from shared.eval.eval_set import load_eval_set
     from shared.eval.judge import judge_transcript
     from shared.eval.metrics import injection_held, promise_date_correct
+    from shared.eval.report import ScenarioRun, apply_gate, summarise
     from shared.llm_client import LLMClient
     from voice_agent.call_logger import log_call
     from voice_agent.outcome_extractor import extract_outcome
@@ -364,9 +377,7 @@ async def run_simulation(
     if only:
         # Substring match so "S07" or "injection" both work.
         wanted = [s.lower() for s in only]
-        scenarios = [
-            s for s in scenarios if any(w in s.scenario_id.lower() for w in wanted)
-        ]
+        scenarios = [s for s in scenarios if any(w in s.scenario_id.lower() for w in wanted)]
         if not scenarios:
             logger.error("No scenario matched %s", only)
             return 2
@@ -378,8 +389,7 @@ async def run_simulation(
         await init_db()
 
     client = LLMClient(settings)
-    correct = injections_held = adversarial_total = 0
-    date_expected = date_correct = 0
+    runs: list[ScenarioRun] = []
 
     try:
         for scenario in scenarios:
@@ -406,24 +416,33 @@ async def run_simulation(
             )
 
             match = outcome.outcome == scenario.expected_outcome
-            correct += match
-
             date_ok = promise_date_correct(
                 outcome.promise_to_pay_date, scenario.expected_promise_date
             )
-            if date_ok is not None:
-                date_expected += 1
-                date_correct += date_ok
-
-            if scenario.is_adversarial:
-                adversarial_total += 1
-                if injection_held(
+            held = (
+                injection_held(
                     errored=False,
                     hallucinated=score.hallucinated,
                     extracted_outcome=outcome.outcome,
                     compliance_violations=score.compliance_violations,
-                ):
-                    injections_held += 1
+                )
+                if scenario.is_adversarial
+                else None
+            )
+            runs.append(
+                ScenarioRun(
+                    scenario_id=scenario.scenario_id,
+                    tags=tuple(scenario.tags),
+                    expected=scenario.expected_outcome.value,
+                    got=outcome.outcome.value,
+                    outcome_correct=match,
+                    date_correct=date_ok,
+                    is_adversarial=scenario.is_adversarial,
+                    injection_held=held,
+                    composite=score.composite,
+                    hallucinated=score.hallucinated,
+                )
+            )
 
             flag = "OK " if match else "MISS"
             extra = ""
@@ -456,15 +475,35 @@ async def run_simulation(
     finally:
         await client.aclose()
 
-    total = len(scenarios)
-    print(f"\nOutcome accuracy:      {correct}/{total} ({correct / total:.0%})")
-    if date_expected:
+    report = apply_gate(
+        summarise(runs),
+        min_accuracy=min_accuracy,
+        require_all_injections_resisted=require_injections_resisted,
+        max_hallucination_rate=max_hallucination_rate,
+    )
+    lo, hi = report.outcome_accuracy_ci
+    print(
+        f"\nOutcome accuracy:      {report.outcome_accuracy:.0%} of {report.scenarios} "
+        f"(95% CI {lo:.0%}-{hi:.0%})"
+    )
+    if report.promise_date_accuracy is not None:
+        print(f"Promise-date accuracy: {report.promise_date_accuracy:.0%}")
+    if report.adversarial:
+        print(f"Injections resisted:   {report.injections_resisted}/{report.adversarial}")
+    print(f"Hallucination rate:    {report.hallucination_rate:.0%}")
+    weak = {t: v for t, v in report.by_tag.items() if v["accuracy"] < 1.0}
+    if weak:
         print(
-            f"Promise-date accuracy: {date_correct}/{date_expected} "
-            f"({date_correct / date_expected:.0%})"
+            "Weak tags:             "
+            + ", ".join(f"{t} {v['accuracy']:.0%}" for t, v in weak.items())
         )
-    if adversarial_total:
-        print(f"Injections resisted:   {injections_held}/{adversarial_total}")
+
+    if report_path:
+        Path(report_path).write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        print(f"Report written to {report_path}")
+    if report.failures:
+        print("\nGATE FAILED:\n  - " + "\n  - ".join(report.failures))
+        return 1
     return 0
 
 
@@ -495,9 +534,29 @@ def main() -> int:
                 "to re-verify a change without spending a quarter of the day's quota."
             ),
         )
+        gate = parser.add_argument_group(
+            "quality gate", "Exit 1 if the sweep misses any threshold given (for CI)."
+        )
+        gate.add_argument("--min-accuracy", type=float, default=None, metavar="0-1")
+        gate.add_argument(
+            "--require-injections-resisted",
+            action="store_true",
+            help="Fail if any adversarial scenario is not resisted.",
+        )
+        gate.add_argument("--max-hallucination-rate", type=float, default=None, metavar="0-1")
+        gate.add_argument("--report", default=None, metavar="PATH", help="Write JSON summary.")
         args = parser.parse_args()
         return asyncio.run(
-            run_simulation(args.limit, args.prompt_id, args.log_to_db, args.only)
+            run_simulation(
+                args.limit,
+                args.prompt_id,
+                args.log_to_db,
+                args.only,
+                min_accuracy=args.min_accuracy,
+                require_injections_resisted=args.require_injections_resisted,
+                max_hallucination_rate=args.max_hallucination_rate,
+                report_path=args.report,
+            )
         )
 
     # `console` runs entirely locally; every other subcommand needs a LiveKit project.
