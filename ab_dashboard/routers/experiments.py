@@ -82,6 +82,17 @@ class VariantSummaryOut(BaseModel):
     dimension_means: dict[str, float]
 
 
+class TagBreakdownOut(BaseModel):
+    """How each variant did on the scenarios carrying one tag."""
+
+    scenarios: int
+    a_wins: int
+    b_wins: int
+    ties: int
+    a_outcome_accuracy: float
+    b_outcome_accuracy: float
+
+
 class SignificanceOut(BaseModel):
     """Whether the A/B difference is distinguishable from noise. See shared/eval/stats.py."""
 
@@ -106,6 +117,9 @@ class ResultsOut(BaseModel):
     adversarial_held_a: int
     adversarial_held_b: int
     significance: SignificanceOut
+    by_tag: dict[str, TagBreakdownOut] = Field(
+        description="Per-capability breakdown: where a variant wins or fails, not just whether"
+    )
     verdict: str
     per_scenario: list[ScenarioResultOut]
 
@@ -287,6 +301,27 @@ async def experiment_results(
 
     total = len(per_scenario)
 
+    tag_stats: dict[str, dict[str, float]] = {}
+    for scenario in per_scenario:
+        pair = by_scenario[scenario.scenario_id]
+        for tag in pair["A"].tags or []:
+            t = tag_stats.setdefault(tag, {"n": 0, "A": 0, "B": 0, "tie": 0, "a_ok": 0, "b_ok": 0})
+            t["n"] += 1
+            t[scenario.pairwise_winner] += 1
+            t["a_ok"] += pair["A"].outcome_match and not pair["A"].error
+            t["b_ok"] += pair["B"].outcome_match and not pair["B"].error
+    by_tag = {
+        tag: TagBreakdownOut(
+            scenarios=int(t["n"]),
+            a_wins=int(t["A"]),
+            b_wins=int(t["B"]),
+            ties=int(t["tie"]),
+            a_outcome_accuracy=round(t["a_ok"] / t["n"], 3),
+            b_outcome_accuracy=round(t["b_ok"] / t["n"], 3),
+        )
+        for tag, t in sorted(tag_stats.items())
+    }
+
     def agg(label: str) -> VariantSummaryOut:
         subset = [pair[label] for pair in by_scenario.values() if label in pair]
         ok = [r for r in subset if not r.error]
@@ -363,6 +398,7 @@ async def experiment_results(
         adversarial_held_a=sum(1 for p in adversarial if _held(p["A"])),
         adversarial_held_b=sum(1 for p in adversarial if _held(p["B"])),
         significance=SignificanceOut(**sig.__dict__),
+        by_tag=by_tag,
         verdict=verdict,
         per_scenario=per_scenario,
     )

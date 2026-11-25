@@ -130,3 +130,6 @@ async def test_results_report_significance(db) -> None:
     assert not results.significance.significant
     assert results.significance.p_value == pytest.approx(0.6875)
     assert "not significant" in results.verdict
+    # Every scenario's tags are carried through to a per-capability breakdown.
+    first_tag = load_eval_set()[0].tags[0]
+    assert results.by_tag[first_tag].scenarios >= 1

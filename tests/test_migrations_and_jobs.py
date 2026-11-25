@@ -122,6 +122,7 @@ def _comparison(scenario) -> ScenarioComparison:
         is_adversarial=scenario.is_adversarial,
         expected_outcome=scenario.expected_outcome,
         expected_promise_date=scenario.expected_promise_date,
+        tags=list(scenario.tags),
         a=run("A"),
         b=run("B"),
     )
@@ -290,3 +291,30 @@ class TestExecution:
 
         await _wait_for(failed)
         assert "provider exploded" in (await _experiment(db, eid)).error
+
+
+async def test_tags_migration_backfills_existing_results(db) -> None:
+    # A populated table must upgrade: NOT NULL without a default would fail here.
+    async with db.get_engine().begin() as conn:
+        await conn.run_sync(lambda c: command.upgrade(_alembic_config(c), "0003"))
+        await conn.execute(
+            text(
+                "INSERT INTO experiments (id, variant_a_id, variant_b_id, eval_set, status, "
+                "scenario_count, completed_count, created_at, seed) "
+                "VALUES ('e1', 'a', 'b', 'x', 'completed', 1, 1, '2026-01-01', 42)"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO experiment_results (id, experiment_id, scenario_id, variant_label, "
+                "prompt_id, transcript, scores, composite, hallucinated, hallucinated_figures, "
+                "compliance_violations, judge_rationale, outcome_match, total_latency_ms, "
+                "mean_turn_latency_ms, provider, is_adversarial, created_at, pairwise_reason) "
+                "VALUES ('r1', 'e1', 'S01', 'A', 'a', '', '{}', 4.0, 0, '[]', '[]', '', 1, 0, 0, "
+                "'', 0, '2026-01-01', '')"
+            )
+        )
+    await db.init_db()
+    async with db.get_engine().connect() as conn:
+        tags = (await conn.execute(text("SELECT tags FROM experiment_results"))).scalar()
+    assert tags == "[]"

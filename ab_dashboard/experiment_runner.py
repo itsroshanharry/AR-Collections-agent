@@ -85,6 +85,7 @@ class ScenarioComparison:
     a: VariantRun
     b: VariantRun
     expected_promise_date: date | None = None
+    tags: list[str] = field(default_factory=list)
     pairwise_winner: str = "tie"  # "A" | "B" | "tie"
     pairwise_reason: str = ""
     presented_a_first: bool = True
@@ -177,6 +178,7 @@ async def _compare_scenario(
         is_adversarial=scenario.is_adversarial,
         expected_outcome=scenario.expected_outcome,
         expected_promise_date=scenario.expected_promise_date,
+        tags=list(scenario.tags),
         a=run_a,
         b=run_b,
         presented_a_first=present_a_first,

@@ -109,6 +109,7 @@ def result_row(experiment_id: str, comparison: ScenarioComparison, run: VariantR
         mean_turn_latency_ms=run.mean_turn_latency_ms,
         provider=run.provider,
         is_adversarial=comparison.is_adversarial,
+        tags=list(comparison.tags),
         error=run.error,
         pairwise_winner=comparison.pairwise_winner,
         pairwise_reason=comparison.pairwise_reason,

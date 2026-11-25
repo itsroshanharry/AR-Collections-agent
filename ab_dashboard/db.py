@@ -141,6 +141,9 @@ class ResultRow(Base):
     mean_turn_latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
     provider: Mapped[str] = mapped_column(String(32), default="")
     is_adversarial: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The scenario's tags at run time (dispute, multi_currency, ...), so results can be
+    # broken down by capability even after the eval set is edited.
+    tags: Mapped[list] = mapped_column(JSON, default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
