@@ -1,0 +1,102 @@
+# Prometheus alert rules. Each alert names a condition a person must act on, and its
+# annotation says what to look at first. Thresholds are starting points for a small
+# deployment; tune them against real traffic before paging anyone on them.
+
+groups:
+  - name: dunning
+    rules:
+      - alert: DunningSchedulerStalled
+        # The scheduler is the only thing that sends reminders, lapses promises and
+        # escalates. If it stops, collections silently stop.
+        expr: time() - dunning_tick_last_success_timestamp_seconds > 900
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Dunning scheduler has not completed a pass in over 15 minutes
+          description: Check /health/ready and the dashboard logs for "Dunning tick failed".
+
+      - alert: FollowUpTasksPastSLA
+        expr: sum by (assignee) (dunning_overdue_tasks) > 0
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.assignee }} has {{ $value }} task(s) past due"
+          description: GET /tasks?assignee={{ $labels.assignee }} lists them, soonest due first.
+
+  - name: call-quality
+    rules:
+      - alert: AgentComplianceViolation
+        # Any violation (a threat, an invented fee) is a conduct issue, not a trend.
+        expr: increase(collections_call_compliance_violations_total[15m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: The judge flagged a compliance violation on prompt {{ $labels.prompt_id }}
+          description: Read the call_logs transcript before the next call on that prompt.
+
+      - alert: AgentHallucinationRateHigh
+        expr: |
+          sum(increase(collections_call_hallucinations_total[1h]))
+            / sum(increase(collections_calls_total[1h])) > 0.05
+          and sum(increase(collections_calls_total[1h])) >= 10
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: Over 5% of calls stated a figure that is not on the invoice
+          description: Compare prompt versions on the dashboard; roll back the most recent one.
+
+      - alert: CaptureExtractionDisagreementRising
+        expr: increase(collections_capture_disagreements_total[1h]) > 3
+        labels: {severity: warning}
+        annotations:
+          summary: Live tool captures keep disagreeing with transcript extraction
+          description: Review the open review_call tasks for the qa queue.
+
+  - name: llm
+    rules:
+      - alert: LLMAllProvidersFailing
+        expr: increase(llm_all_providers_failed_total[10m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: LLM requests are failing on every provider in the chain
+          description: Likely a daily token quota or an outage. Check llm_requests_total by result.
+
+      - alert: LLMFailoverRateHigh
+        # Failovers change the model, which confounds any A/B experiment running now.
+        expr: |
+          sum(rate(llm_failovers_total[10m]))
+            / sum(rate(llm_requests_total[10m])) > 0.2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Over 20% of LLM requests are failing over to a backup provider
+          description: Experiments started now will mix models; pause them or note it.
+
+      - alert: LLMLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, provider) (rate(llm_request_duration_seconds_bucket[10m]))) > 10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.provider }} p95 latency is above 10s"
+          description: On a live call this is dead air. Check rate-limit pacing wait first.
+
+  - name: platform
+    rules:
+      - alert: DashboardErrorRateHigh
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Over 5% of API requests are failing with a server error
+          description: Find the route on the HTTP panels, then its request ids in the logs.
+
+      - alert: DashboardDown
+        expr: up{job="ar-dashboard"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Prometheus cannot scrape the dashboard
+          description: The process is down or unreachable; /health should answer.
