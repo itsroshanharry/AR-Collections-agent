@@ -8,8 +8,8 @@ from ab_dashboard import health
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'h.db'}")
+def client(database_url, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("DUNNING_TICK_SECONDS", "0")
     import ab_dashboard.db as db_module
     from shared.config import get_settings

@@ -99,8 +99,8 @@ class TestTracingSetup:
         assert installed, "a tracer provider should have been installed"
 
 
-def test_request_id_round_trip(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'rid.db'}")
+def test_request_id_round_trip(database_url, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("DUNNING_TICK_SECONDS", "0")
     import ab_dashboard.db as db_module
     from shared.config import get_settings

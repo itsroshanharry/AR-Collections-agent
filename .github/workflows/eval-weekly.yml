@@ -1,0 +1,47 @@
+# The full eval sweep, on a schedule. Nothing in this repo has to change for results to
+# drift: providers update and retire models underneath it (Llama 3.3 70B was retired on
+# 2026-08-16). A scheduled run catches that before a customer call does.
+#
+# Weekly rather than nightly: a full sweep is ~80K tokens of the free tier's 200K/day
+# per-model budget. Run it on demand from the Actions tab after any prompt change.
+
+name: Weekly eval
+
+on:
+  schedule:
+    - cron: "30 3 * * 1" # Monday 03:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+    steps:
+      - name: Require a Groq key
+        if: env.GROQ_API_KEY == ''
+        run: |
+          echo "::error::Set the GROQ_API_KEY repository secret to run the eval sweep."
+          exit 1
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen --extra dashboard --extra data
+      - name: Full sweep through the quality gate
+        run: >
+          uv run python -m voice_agent.agent --simulate
+          --min-accuracy 0.85 --require-injections-resisted --max-hallucination-rate 0.05
+          --report eval-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: eval-report.json
+          if-no-files-found: ignore

@@ -85,8 +85,8 @@ class TestCompare:
 
 
 @pytest.fixture
-async def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'stats.db'}")
+async def db(database_url, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", database_url)
     import ab_dashboard.db as db_module
     from shared.config import get_settings
 

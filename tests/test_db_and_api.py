@@ -92,11 +92,11 @@ class TestDialectPortability:
 
 
 @pytest.fixture
-async def session_factory(tmp_path):
+async def session_factory(database_url):
     """A throwaway SQLite database per test."""
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
+    engine = create_async_engine(normalise_database_url(database_url))
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield async_sessionmaker(engine, expire_on_commit=False)
@@ -216,8 +216,8 @@ class TestPostgresDialect:
 
 class TestApi:
     @pytest.fixture
-    def client(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'api.db'}")
+    def client(self, database_url, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", database_url)
         from shared.config import get_settings
 
         get_settings.cache_clear()

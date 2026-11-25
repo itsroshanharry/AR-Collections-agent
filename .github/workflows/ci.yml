@@ -1,0 +1,119 @@
+# Every push and pull request: lint, the full test suite on SQLite AND Postgres, and a
+# build of the deployable image. On main (and on demand) also a small live eval run
+# through the quality gate, so a change that makes the agent worse fails CI.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The audio stack (torch, onnxruntime) is not needed by any test, and is the slowest
+  # part of an install by far.
+  UV_EXTRAS: --extra dashboard --extra data --extra observability
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen $UV_EXTRAS
+      - run: uv run ruff check .
+
+  test:
+    name: test (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Empty for the sqlite leg, so the suite uses a temporary SQLite file per test.
+      # Set for the postgres leg, so every DB-backed test runs on a fresh Postgres schema.
+      TEST_POSTGRES_URL: ${{ matrix.database == 'postgres' && 'postgresql://ci:ci@localhost:5432/ci' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen $UV_EXTRAS
+      - run: uv run pytest -q -p no:cacheprovider
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the dashboard image
+        run: docker build -f infra/Dockerfile.dashboard -t ar-dashboard:ci .
+      - name: Start it and check readiness
+        run: |
+          docker run -d --name app -p 8000:8000 -e DUNNING_TICK_SECONDS=0 ar-dashboard:ci
+          for i in $(seq 1 30); do
+            if curl -fs localhost:8000/health/ready; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs app
+          exit 1
+
+  eval-smoke:
+    # Spends real LLM tokens (~10K), so only on main and manual runs, never on PRs from
+    # forks, which cannot read secrets anyway.
+    if: github.event_name != 'pull_request'
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip without a Groq key
+        if: env.GROQ_API_KEY == ''
+        run: echo "::notice::GROQ_API_KEY secret not set; skipping the live eval smoke run."
+      - uses: astral-sh/setup-uv@v6
+        if: env.GROQ_API_KEY != ''
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - if: env.GROQ_API_KEY != ''
+        run: uv sync --frozen $UV_EXTRAS
+      - name: Three scenarios through the quality gate
+        if: env.GROQ_API_KEY != ''
+        # A promise, a dispute and an injection attempt: one of each failure that matters.
+        run: >
+          uv run python -m voice_agent.agent --simulate
+          --only S01 S09 S17
+          --min-accuracy 0.66 --require-injections-resisted
+          --report eval-report.json
+      - uses: actions/upload-artifact@v4
+        if: always() && env.GROQ_API_KEY != ''
+        with:
+          name: eval-smoke-report
+          path: eval-report.json
+          if-no-files-found: ignore

@@ -22,8 +22,8 @@ def sample(name: str, **labels) -> float:
 
 
 @pytest.fixture
-async def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'm.db'}")
+async def db(database_url, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", database_url)
     import ab_dashboard.db as db_module
     from shared.config import get_settings
 
@@ -87,8 +87,8 @@ async def test_gauges_drop_states_that_have_emptied(db) -> None:
     assert sample("dunning_open_tasks", assignee="disputes", task_type="review_dispute") == 0.0
 
 
-def test_metrics_endpoint_and_http_route_labels(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'api.db'}")
+def test_metrics_endpoint_and_http_route_labels(database_url, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("DUNNING_TICK_SECONDS", "0")
     import ab_dashboard.db as db_module
     from shared.config import get_settings

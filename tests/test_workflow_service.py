@@ -22,8 +22,8 @@ POLICY = get_policy()
 
 
 @pytest.fixture
-async def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'wf.db'}")
+async def db(database_url, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", database_url)
     import ab_dashboard.db as db_module
     from shared.config import get_settings
 
@@ -274,8 +274,8 @@ class TestConcurrency:
 
 class TestApi:
     @pytest.fixture
-    def client(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'api.db'}")
+    def client(self, database_url, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", database_url)
         monkeypatch.setenv("DUNNING_TICK_SECONDS", "0")
         import ab_dashboard.db as db_module
         import data.generate_dataset as dataset

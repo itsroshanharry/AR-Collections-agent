@@ -8,6 +8,7 @@ database, not in Python.
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -33,9 +34,9 @@ from tests.conftest import perfect_score
 
 
 @pytest.fixture
-async def db(tmp_path, monkeypatch):
+async def db(database_url, monkeypatch):
     """Point the app's engine at a fresh SQLite file; yield its sessionmaker."""
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'jobs.db'}")
+    monkeypatch.setenv("DATABASE_URL", database_url)
     import ab_dashboard.db as db_module
     from shared.config import get_settings
 
@@ -310,11 +311,11 @@ async def test_tags_migration_backfills_existing_results(db) -> None:
                 "prompt_id, transcript, scores, composite, hallucinated, hallucinated_figures, "
                 "compliance_violations, judge_rationale, outcome_match, total_latency_ms, "
                 "mean_turn_latency_ms, provider, is_adversarial, created_at, pairwise_reason) "
-                "VALUES ('r1', 'e1', 'S01', 'A', 'a', '', '{}', 4.0, 0, '[]', '[]', '', 1, 0, 0, "
-                "'', 0, '2026-01-01', '')"
+                "VALUES ('r1', 'e1', 'S01', 'A', 'a', '', '{}', 4.0, FALSE, '[]', '[]', '', TRUE, "
+                "0, 0, '', FALSE, '2026-01-01', '')"
             )
         )
     await db.init_db()
     async with db.get_engine().connect() as conn:
         tags = (await conn.execute(text("SELECT tags FROM experiment_results"))).scalar()
-    assert tags == "[]"
+    assert (json.loads(tags) if isinstance(tags, str) else tags) == []

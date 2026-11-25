@@ -1,5 +1,7 @@
 # AR Collections Voice Agent + Prompt A/B Testing Dashboard
 
+[![CI](https://github.com/itsroshanharry/AR-Collections-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/itsroshanharry/AR-Collections-agent/actions/workflows/ci.yml)
+
 Two connected deliverables for agentic AI in finance back-office automation:
 
 1. **Collections voice agent** — a LiveKit Agents worker that runs dunning calls about overdue
@@ -273,11 +275,18 @@ uv run alembic revision --autogenerate -m "describe the change"
 
 `tests/test_migrations_and_jobs.py` fails if the models and the migrations disagree.
 
-To verify Postgres compatibility before deploying:
+Every database-backed test takes a fresh database from one fixture. With `TEST_POSTGRES_URL` set,
+the whole suite runs against Postgres instead of SQLite (the schema is reset before each test):
 
 ```bash
-TEST_POSTGRES_URL=postgresql://... uv run pytest tests/test_db_and_api.py
+TEST_POSTGRES_URL=postgresql://user:pass@localhost:5432/scratch uv run pytest
 ```
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint, the suite on both SQLite and
+Postgres, and a build-and-boot of the Docker image on every push and pull request. On `main` it also
+runs three live scenarios through the quality gate, and
+[`eval-weekly.yml`](.github/workflows/eval-weekly.yml) runs the full sweep every Monday to catch
+provider-side model drift. Both live runs need a `GROQ_API_KEY` repository secret.
 
 ## Roadmap
 

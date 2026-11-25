@@ -26,8 +26,8 @@ def invoice(invoice_id: str, days: int):
 
 
 @pytest.fixture
-async def db(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'agent.db'}")
+async def db(database_url, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.delenv("CALL_INVOICE_ID", raising=False)
     import ab_dashboard.db as db_module
     import data.generate_dataset as dataset
