@@ -20,7 +20,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -33,7 +33,9 @@ from ab_dashboard.db import (
     get_sessionmaker,
 )
 from shared.models import CallOutcome, Invoice, RiskTier
-from voice_agent.dunning_logic import classify_risk, priority_score
+from shared.observability import metrics as m
+from shared.observability.tracing import tracer
+from voice_agent.dunning_logic import amount_in_inr, classify_risk, priority_score
 from workflow.policy import INTRUSIVE_CHANNELS, Channel, DunningPolicy, TaskType, get_policy
 from workflow.scheduler import Attempt, NextAction, as_utc, next_action
 from workflow.state_machine import (
@@ -56,6 +58,18 @@ logger = logging.getLogger(__name__)
 # Contact history older than this cannot affect any rule (the longest is 7 days).
 ATTEMPT_LOOKBACK = timedelta(days=8)
 MAX_RETRIES = 3
+
+
+def _on_commit(session: AsyncSession, record) -> None:
+    """Queue a metric update to run only if this transaction commits. Counting at the
+    point of change would double-count every write that loses a version conflict and is
+    retried."""
+    session.info.setdefault("metrics", []).append(record)
+
+
+def _flush_metrics(session: AsyncSession) -> None:
+    for record in session.info.pop("metrics", []):
+        record()
 
 
 class NotFoundError(LookupError):
@@ -261,6 +275,10 @@ async def _apply(
         # verify task): the ledger balance is zero either way.
         row.amount_outstanding = "0.00"
     created = await _open_tasks(session, row, transition.tasks, call_log_id)
+    event_kind, to_state = transition.event.split(":", 1)[0], row.state
+    _on_commit(session, lambda: m.DUNNING_TRANSITIONS.labels(event_kind, to_state).inc())
+    for task in created:
+        _on_commit(session, lambda t=task.task_type: m.DUNNING_TASKS_OPENED.labels(t).inc())
     await _close_tasks(
         session, row.invoice_id, transition.close_tasks, now, except_id=except_task_id
     )
@@ -306,6 +324,7 @@ async def _with_retry[T](op: Callable[[AsyncSession], Awaitable[T]]) -> T:
             async with get_sessionmaker()() as session:
                 result = await op(session)
                 await session.commit()
+                _flush_metrics(session)
                 return result
         except StaleDataError:
             logger.info("Concurrent update; retrying (%d/%d)", attempt, MAX_RETRIES)
@@ -404,6 +423,7 @@ async def sync_invoices(
             report.created += 1
             report.disputed_on_arrival += row.state == DunningState.DISPUTED.value
         await session.commit()
+        _flush_metrics(session)
     return report
 
 
@@ -473,6 +493,8 @@ async def _tick_one(
                 outcome="sent",
             )
         )
+        channel = planned.channel.value
+        _on_commit(session, lambda: m.DUNNING_CONTACTS.labels(channel).inc())
         await _apply(session, row, on_contact(_snapshot(row), planned.channel, now), now)
         if planned.channel is Channel.EMAIL:
             report.emails_sent += 1
@@ -490,6 +512,15 @@ async def tick(*, now: datetime | None = None, policy: DunningPolicy | None = No
     rest of the pass. Safe to run from several workers: a concurrent edit to the same
     invoice makes one of them skip it until the next pass.
     """
+    with tracer.start_as_current_span("dunning.tick") as span, m.DUNNING_TICK_DURATION.time():
+        report = await _tick(now, policy)
+        for key, value in report.__dict__.items():
+            span.set_attribute(f"dunning.{key}", value)
+    m.DUNNING_TICK_LAST_SUCCESS.set_to_current_time()
+    return report
+
+
+async def _tick(now: datetime | None, policy: DunningPolicy | None) -> TickReport:
     now = as_utc(now or datetime.now(UTC))
     policy = policy or get_policy()
     report = TickReport()
@@ -519,8 +550,10 @@ async def tick(*, now: datetime | None = None, policy: DunningPolicy | None = No
             async with get_sessionmaker()() as session:
                 await _tick_one(session, invoice_id, report, policy, now, leads)
                 await session.commit()
+                _flush_metrics(session)
         except StaleDataError:
             report.conflicts += 1
+            m.DUNNING_TICK_CONFLICTS.inc()
         except Exception:  # noqa: BLE001 - one bad invoice must not stop the pass
             logger.exception("Tick failed for %s", invoice_id)
     return report
@@ -635,6 +668,9 @@ async def record_call_outcome(
     policy = policy or get_policy()
     attempt_id = _new_id()
     source_id = call_log_id or attempt_id
+    span = tracer.start_span("dunning.record_call_outcome")
+    span.set_attribute("invoice.id", invoice_id)
+    span.set_attribute("call.outcome", outcome.outcome.value)
 
     async def op(session: AsyncSession) -> OutcomeReport:
         row = await session.get(InvoiceStateRow, invoice_id)
@@ -669,6 +705,9 @@ async def record_call_outcome(
                 )
             )
 
+        _on_commit(session, lambda: m.DUNNING_CONTACTS.labels("call").inc())
+        if discrepancy:
+            _on_commit(session, m.CAPTURE_DISAGREEMENTS.inc)
         session.add(
             ContactAttemptRow(
                 id=attempt_id,
@@ -695,7 +734,13 @@ async def record_call_outcome(
             next_action_at=row.next_action_at,
         )
 
-    return await _with_retry(op)
+    try:
+        report = await _with_retry(op)
+        span.set_attribute("dunning.state", report.state)
+        span.set_attribute("dunning.tasks_opened", len(report.tasks_opened))
+        return report
+    finally:
+        span.end()
 
 
 async def record_payment(
@@ -839,6 +884,66 @@ async def invoice_detail(invoice_id: str, *, now: datetime | None = None) -> Inv
         events=events,
         attempts=attempts,
     )
+
+
+async def refresh_metrics(*, now: datetime | None = None) -> None:
+    """Recompute the point-in-time workflow gauges from the database.
+
+    Called on each /metrics scrape, so the numbers are as fresh as the scrape and every
+    worker reports the same shared state.
+    """
+    now = as_utc(now or datetime.now(UTC))
+    async with get_sessionmaker()() as session:
+        states = (
+            await session.execute(
+                select(InvoiceStateRow.state, InvoiceStateRow.tier, func.count()).group_by(
+                    InvoiceStateRow.state, InvoiceStateRow.tier
+                )
+            )
+        ).all()
+        open_tasks = (
+            await session.execute(
+                select(TaskRow.assignee, TaskRow.task_type, func.count())
+                .where(TaskRow.status == "open")
+                .group_by(TaskRow.assignee, TaskRow.task_type)
+            )
+        ).all()
+        overdue = (
+            await session.execute(
+                select(TaskRow.assignee, func.count())
+                .where(TaskRow.status == "open", TaskRow.due_date < now.date())
+                .group_by(TaskRow.assignee)
+            )
+        ).all()
+        balances = (
+            await session.execute(
+                select(
+                    InvoiceStateRow.tier,
+                    InvoiceStateRow.amount_outstanding,
+                    InvoiceStateRow.invoice,
+                ).where(InvoiceStateRow.state != DunningState.CLOSED.value)
+            )
+        ).all()
+
+    # Cleared first so a state or queue that has emptied reports nothing rather than
+    # its last non-zero value.
+    m.DUNNING_INVOICES.clear()
+    for state, tier, count in states:
+        m.DUNNING_INVOICES.labels(state, tier).set(count)
+    m.DUNNING_OPEN_TASKS.clear()
+    for assignee, task_type, count in open_tasks:
+        m.DUNNING_OPEN_TASKS.labels(assignee, task_type).set(count)
+    m.DUNNING_OVERDUE_TASKS.clear()
+    for assignee, count in overdue:
+        m.DUNNING_OVERDUE_TASKS.labels(assignee).set(count)
+    by_tier: dict[str, Decimal] = {}
+    for tier, amount, invoice in balances:
+        stub = Invoice.model_validate(invoice).model_copy(update={"amount": Decimal(amount)})
+        by_tier[tier] = by_tier.get(tier, Decimal("0")) + amount_in_inr(stub)
+    m.DUNNING_OUTSTANDING.clear()
+    for tier, total in by_tier.items():
+        m.DUNNING_OUTSTANDING.labels(tier).set(float(total))
+    m.DUNNING_CALLS_DUE.set(len(await due_calls(now=now, limit=100_000)))
 
 
 async def has_invoices() -> bool:

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from shared.llm_client import LLMClient
 from shared.models import EvalScenario, PromptVersion
+from shared.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,18 @@ async def simulate_call(
     agent reply. Latency is measured per agent turn, since that is what a caller
     actually waits on.
     """
+    with tracer.start_as_current_span("call.simulate") as span:
+        span.set_attribute("scenario.id", scenario.scenario_id)
+        span.set_attribute("prompt.id", prompt.id)
+        call = await _simulate(client, prompt, scenario, max_reply_tokens)
+        span.set_attribute("call.turns", len(call.agent_turns))
+        span.set_attribute("call.providers", sorted(set(call.providers)))
+        return call
+
+
+async def _simulate(
+    client: LLMClient, prompt: PromptVersion, scenario: EvalScenario, max_reply_tokens: int
+) -> SimulatedCall:
     system_prompt = prompt.render(scenario.invoice)
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     call = SimulatedCall(scenario_id=scenario.scenario_id, prompt_id=prompt.id)
@@ -100,9 +113,7 @@ async def simulate_call(
                 f"{resp.completion_tokens} completion)"
             )
         if resp.truncated:
-            logger.warning(
-                "Truncated agent turn in %s: %r", scenario.scenario_id, text[-60:]
-            )
+            logger.warning("Truncated agent turn in %s: %r", scenario.scenario_id, text[-60:])
         call.turns.append(("agent", text))
         call.turn_latencies_ms.append(resp.latency_ms)
         call.providers.append(resp.provider)

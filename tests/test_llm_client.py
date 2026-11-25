@@ -521,3 +521,55 @@ class TestJsonExtraction:
     def test_escaped_quote_inside_string(self) -> None:
         text = r'{"note": "say \"hi\"", "n": 1}'
         assert json.loads(_extract_json(text))["n"] == 1
+
+
+
+class TestMetrics:
+    """Counters are read before and after, since the registry is process-global."""
+
+    @staticmethod
+    def value(name: str, **labels) -> float:
+        from shared.observability.metrics import REGISTRY
+
+        return REGISTRY.get_sample_value(name, labels) or 0.0
+
+    async def test_success_records_request_and_tokens(self) -> None:
+        client = LLMClient(_settings(), max_retries_per_provider=1)
+        model = client.providers[0].model
+        ok = {"provider": "groq", "model": model, "result": "ok"}
+        prompt = {"provider": "groq", "model": model, "kind": "prompt"}
+        before_ok, before_tokens = self.value("llm_requests_total", **ok), self.value(
+            "llm_tokens_total", **prompt
+        )
+        _install_fakes(client, {"groq": [_ok()]})
+
+        await client.complete([{"role": "user", "content": "hi"}])
+
+        assert self.value("llm_requests_total", **ok) == before_ok + 1
+        assert self.value("llm_tokens_total", **prompt) == before_tokens + 10
+
+    async def test_failover_and_retry_are_counted(self) -> None:
+        client = LLMClient(_settings(), max_retries_per_provider=2)
+        before_failover = self.value("llm_failovers_total", from_provider="groq")
+        _install_fakes(
+            client,
+            {"groq": [_rate_limit_error(), _rate_limit_error()], "cerebras": [_ok()]},
+        )
+        client.max_backoff_seconds = 0
+
+        await client.complete([{"role": "user", "content": "hi"}])
+
+        assert self.value("llm_failovers_total", from_provider="groq") == before_failover + 1
+
+    async def test_total_failure_is_counted(self) -> None:
+        client = LLMClient(_settings(), max_retries_per_provider=1)
+        before = self.value("llm_all_providers_failed_total")
+        _install_fakes(
+            client,
+            {name: [_server_error()] for name in ("groq", "cerebras", "ollama")},
+        )
+
+        with pytest.raises(AllProvidersFailedError):
+            await client.complete([{"role": "user", "content": "hi"}])
+
+        assert self.value("llm_all_providers_failed_total") == before + 1

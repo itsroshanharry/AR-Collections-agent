@@ -138,6 +138,8 @@ dependencies = [
     { name = "greenlet" },
     { name = "httpx" },
     { name = "openai" },
+    { name = "opentelemetry-api" },
+    { name = "prometheus-client" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
@@ -156,6 +158,10 @@ dashboard = [
 data = [
     { name = "faker" },
     { name = "pandas" },
+]
+observability = [
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
 ]
 voice = [
     { name = "livekit-agents", extra = ["deepgram", "groq", "openai", "silero"] },
@@ -178,7 +184,11 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "livekit-agents", extras = ["groq", "openai", "silero", "deepgram"], marker = "extra == 'voice'", specifier = "~=1.6" },
     { name = "openai", specifier = ">=1.60" },
+    { name = "opentelemetry-api", specifier = ">=1.39.1" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'observability'", specifier = ">=1.39.1" },
+    { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=1.39.1" },
     { name = "pandas", marker = "extra == 'data'", specifier = ">=2.2" },
+    { name = "prometheus-client", specifier = ">=0.26.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dashboard'", specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
@@ -189,7 +199,7 @@ requires-dist = [
     { name = "tzdata", specifier = ">=2026.3" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'dashboard'", specifier = ">=0.32" },
 ]
-provides-extras = ["dashboard", "voice", "data"]
+provides-extras = ["dashboard", "voice", "data", "observability"]
 
 [package.metadata.requires-dev]
 dev = [

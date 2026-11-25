@@ -15,15 +15,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ab_dashboard import jobs
 from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
 from ab_dashboard.routers import dunning, experiments, prompts
 from shared.config import get_settings
+from shared.observability import metrics as m
 from workflow import service as dunning_service
 
 logging.basicConfig(
@@ -92,6 +95,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def http_metrics(request: Request, call_next):
+    started = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        # The route *template* (/tasks/{task_id}), never the raw path: one series per
+        # endpoint rather than one per task id. Unmatched paths share a single label.
+        route = request.scope.get("route")
+        label = getattr(route, "path", None) or "unmatched"
+        m.HTTP_REQUESTS.labels(request.method, label, str(status_code)).inc()
+        m.HTTP_LATENCY.labels(request.method, label).observe(time.perf_counter() - started)
+
+
+@app.get("/metrics", tags=["meta"], include_in_schema=False)
+async def metrics() -> Response:
+    """Prometheus scrape endpoint. Workflow gauges are recomputed from the database on
+    each scrape, so every worker reports the same, current state."""
+    try:
+        await dunning_service.refresh_metrics()
+    except Exception:  # noqa: BLE001 - a DB blip must not take the metrics endpoint down
+        logger.warning("Could not refresh workflow gauges", exc_info=True)
+    return Response(generate_latest(m.REGISTRY), media_type=CONTENT_TYPE_LATEST)
+
 
 app.include_router(prompts.router)
 app.include_router(experiments.router)

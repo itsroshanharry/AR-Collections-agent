@@ -25,6 +25,8 @@ from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitErr
 from pydantic import BaseModel, ValidationError
 
 from shared.config import Settings, get_settings
+from shared.observability import metrics as m
+from shared.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -236,9 +238,7 @@ def _parse_duration(raw: str) -> float:
     raw = raw.strip()
     if not raw:
         raise ValueError("empty duration")
-    match = re.fullmatch(
-        r"(?:(?P<h>[\d.]+)h)?(?:(?P<m>[\d.]+)m)?(?:(?P<s>[\d.]+)s)?", raw
-    )
+    match = re.fullmatch(r"(?:(?P<h>[\d.]+)h)?(?:(?P<m>[\d.]+)m)?(?:(?P<s>[\d.]+)s)?", raw)
     if match and any(match.groupdict().values()):
         return (
             float(match.group("h") or 0) * 3600
@@ -366,6 +366,47 @@ class LLMClient:
         max_tokens: int = 1024,
         response_format: dict[str, Any] | None = None,
     ) -> LLMResponse:
+        # One span per logical request, covering retries and failovers, with the
+        # OpenTelemetry GenAI semantic-convention attributes so any tracing backend
+        # can chart tokens and latency per model without custom parsing.
+        with tracer.start_as_current_span("llm.complete") as span:
+            span.set_attribute("gen_ai.operation.name", "chat")
+            span.set_attribute("gen_ai.request.max_tokens", max_tokens)
+            span.set_attribute("gen_ai.request.temperature", temperature)
+            try:
+                result = await self._complete(
+                    messages,
+                    model=model,
+                    use_small=use_small,
+                    reasoning_effort=reasoning_effort,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format=response_format,
+                )
+            except AllProvidersFailedError:
+                m.LLM_EXHAUSTED.inc()
+                span.set_attribute("error.type", "all_providers_failed")
+                raise
+            span.set_attribute("gen_ai.system", result.provider)
+            span.set_attribute("gen_ai.response.model", result.model)
+            span.set_attribute("gen_ai.usage.input_tokens", result.prompt_tokens)
+            span.set_attribute("gen_ai.usage.output_tokens", result.completion_tokens)
+            span.set_attribute("gen_ai.usage.reasoning_tokens", result.reasoning_tokens)
+            span.set_attribute("gen_ai.response.finish_reasons", [result.finish_reason])
+            span.set_attribute("llm.attempts", result.attempts)
+            return result
+
+    async def _complete(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None,
+        use_small: bool,
+        reasoning_effort: str | None,
+        temperature: float,
+        max_tokens: int,
+        response_format: dict[str, Any] | None,
+    ) -> LLMResponse:
         prompt_tokens = estimate_tokens(json.dumps(messages))
         attempts: list[str] = []
         last_exc: BaseException | None = None
@@ -389,6 +430,8 @@ class LLMClient:
             for attempt in range(1, self.max_retries_per_provider + 1):
                 if bucket:
                     waited = await bucket.acquire(cost)
+                    if waited > 0:
+                        m.LLM_PACING_WAIT.labels(provider.name, chosen_model).inc(waited)
                     if waited > 0.5:
                         logger.info(
                             "Paced %s/%s: waited %.1fs for ~%d tokens of budget",
@@ -426,7 +469,17 @@ class LLMClient:
                         finish_reason=getattr(choice, "finish_reason", "") or "",
                         attempts=attempts,
                     )
+                    m.LLM_REQUESTS.labels(provider.name, result.model, "ok").inc()
+                    m.LLM_LATENCY.labels(provider.name, result.model).observe(latency_ms / 1000)
+                    for kind, count in (
+                        ("prompt", result.prompt_tokens),
+                        ("completion", result.completion_tokens),
+                        ("reasoning", result.reasoning_tokens),
+                    ):
+                        if count:
+                            m.LLM_TOKENS.labels(provider.name, result.model, kind).inc(count)
                     if result.truncated:
+                        m.LLM_TRUNCATED.labels(provider.name, result.model).inc()
                         logger.warning(
                             "%s returned a truncated reply (finish_reason=%r, "
                             "%d reasoning of %d completion tokens, max_tokens=%d). "
@@ -449,6 +502,8 @@ class LLMClient:
                         detail = f"{detail}/{code}"
                     attempts.append(f"{provider.name}:attempt{attempt}:{detail}")
                     if not _is_retryable(exc):
+                        m.LLM_REQUESTS.labels(provider.name, chosen_model, "failed").inc()
+                        m.LLM_FAILOVERS.labels(provider.name).inc()
                         logger.warning(
                             "%s failed non-retryably: %s; failing over",
                             provider.name,
@@ -456,12 +511,15 @@ class LLMClient:
                         )
                         break
                     if attempt == self.max_retries_per_provider:
+                        m.LLM_REQUESTS.labels(provider.name, chosen_model, "failed").inc()
+                        m.LLM_FAILOVERS.labels(provider.name).inc()
                         logger.warning(
                             "%s exhausted %d retries; failing over",
                             provider.name,
                             self.max_retries_per_provider,
                         )
                         break
+                    m.LLM_REQUESTS.labels(provider.name, chosen_model, "retry").inc()
                     # Prefer the server's own hint over guessing. Groq's free tier
                     # refills tokens continuously, so the real wait is often ~1s.
                     hinted = _retry_after_seconds(exc)

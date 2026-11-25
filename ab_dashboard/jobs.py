@@ -50,6 +50,8 @@ from shared.eval.eval_set import load_eval_set
 from shared.eval.metrics import promise_date_correct
 from shared.llm_client import LLMClient
 from shared.models import PromptVersion, Tone
+from shared.observability import metrics as m
+from shared.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -207,12 +209,13 @@ async def release_leases() -> int:
 async def _finish(experiment_id: str, *, error: str | None = None) -> None:
     """Mark the run terminal - only if we still hold it, so a worker that lost its lease
     cannot overwrite the new owner's outcome."""
+    status = ExperimentStatus.FAILED if error else ExperimentStatus.COMPLETED
     async with get_sessionmaker()() as session:
-        await session.execute(
+        result = await session.execute(
             update(ExperimentRow)
             .where(ExperimentRow.id == experiment_id, ExperimentRow.worker_id == WORKER_ID)
             .values(
-                status=ExperimentStatus.FAILED if error else ExperimentStatus.COMPLETED,
+                status=status,
                 error=error,
                 completed_at=_now(),
                 worker_id=None,
@@ -220,6 +223,9 @@ async def _finish(experiment_id: str, *, error: str | None = None) -> None:
             )
         )
         await session.commit()
+    # Only the lease holder's write lands; a worker that lost the run records nothing.
+    if result.rowcount:
+        m.EXPERIMENTS_FINISHED.labels(status).inc()
 
 
 async def _persist_comparison(experiment_id: str, comparison: ScenarioComparison) -> None:
@@ -242,6 +248,8 @@ async def _persist_comparison(experiment_id: str, comparison: ScenarioComparison
             .values(completed_count=ExperimentRow.completed_count + 1, heartbeat_at=_now())
         )
         await session.commit()
+    m.EXPERIMENT_SCENARIOS.inc()
+    m.EXPERIMENT_SCENARIO_ERRORS.inc(bool(comparison.a.error) + bool(comparison.b.error))
 
 
 async def execute(experiment_id: str) -> None:
@@ -317,6 +325,9 @@ async def _supervise(experiment_id: str) -> None:
     run_task = asyncio.current_task()
     assert run_task is not None
     heartbeat = asyncio.create_task(_heartbeat(experiment_id, run_task))
+    m.EXPERIMENTS_ACTIVE.inc()
+    span = tracer.start_span("experiment.run")
+    span.set_attribute("experiment.id", experiment_id)
     try:
         await execute(experiment_id)
     except asyncio.CancelledError:
@@ -332,6 +343,8 @@ async def _supervise(experiment_id: str) -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await heartbeat
         _active.pop(experiment_id, None)
+        m.EXPERIMENTS_ACTIVE.dec()
+        span.end()
 
 
 async def launch(experiment_id: str) -> bool:

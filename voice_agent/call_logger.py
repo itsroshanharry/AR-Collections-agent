@@ -16,6 +16,7 @@ from sqlalchemy import Integer, cast, func, select
 
 from ab_dashboard.db import CallLogRow, get_sessionmaker
 from shared.models import CallOutcome, Invoice, JudgeScore
+from shared.observability import metrics as m
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,13 @@ async def log_call(
         )
         session.add(row)
         await session.commit()
+        m.CALLS.labels(mode, row.risk_tier or "unknown", row.outcome or "none").inc()
+        if score:
+            m.CALL_COMPOSITE.labels(prompt_id).observe(score.composite)
+            if score.hallucinated:
+                m.CALL_HALLUCINATIONS.labels(prompt_id).inc()
+            if score.compliance_violations:
+                m.CALL_COMPLIANCE.labels(prompt_id).inc()
         logger.info(
             "Logged call %s: invoice=%s prompt=%s outcome=%s composite=%.2f",
             row.id,
