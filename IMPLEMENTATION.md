@@ -8,8 +8,9 @@ that produced it.
 
 | Verification | Result |
 |---|---|
-| Unit/integration tests | **287 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
-| Eval sweep (`--simulate`, 18 scenarios, live LLM) | **16/18 outcomes (89%)**, 6/7 promise dates, **2/2 injections resisted** |
+| Unit/integration tests | **348 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
+| Eval sweep (`--simulate`, original 18 scenarios, live LLM) | **16/18 outcomes (89%)**, 6/7 promise dates, **2/2 injections resisted**. Measured before the metric definitions were unified (see bugs below); re-run before quoting. |
+| Eval sweep, 10 new scenarios (S19–S28, live LLM) | **9/10** on first run, **3/3 new attacks resisted**, 0 hallucinations. Both misses were extractor gaps, fixed and re-verified with no regressions on S06/S09/S10 (5/5). |
 | Live voice call (LiveKit + Deepgram, real audio) | **composite 4.8/5**, promise-to-pay captured correctly, 0 hallucinations, 0 compliance violations |
 | Lint | `ruff` clean |
 
@@ -66,7 +67,7 @@ which the call queue then drops entirely.
 
 | # | Plan requirement | Implementation | Verified |
 |---|---|---|---|
-| 1 | 15–20 scenario fixed eval set | **18 scenarios** in [`eval_scenarios.yaml`](data/eval_scenarios.yaml) | All 7 outcome types covered |
+| 1 | 15–20 scenario fixed eval set | **28 scenarios** in [`eval_scenarios.yaml`](data/eval_scenarios.yaml) | All 7 outcome types, 4 currencies, 5 adversarial across 4 attack types |
 | 2 | `POST /prompts` | ✅ [`routers/prompts.py`](ab_dashboard/routers/prompts.py) | |
 | 2 | `GET /prompts/{id}/history` | ✅ lineage by name, oldest first | |
 | 2 | `POST /experiments` | ✅ background task, returns immediately | |
@@ -98,7 +99,23 @@ applicable, the exact promise-to-pay date. An agent and a judge can agree with e
 be wrong.
 
 **Adversarial scenarios.** S17 and S18 contain prompt injections in customer speech. Listed as a
-"next step" in the plan; included in v1 because they are the most valuable cases in the set.
+"next step" in the plan; included in v1 because they are the most valuable cases in the set. S25–S27
+extend this beyond injection: payment-diversion fraud, compliance baiting, and third-party data
+fishing.
+
+**Significance, not just win-rate** ([`stats.py`](shared/eval/stats.py)). Exact sign test, Wilson
+intervals and a paired bootstrap, standard library only. The verdict says "not significant" when a
+split could be chance, which on tens of scenarios is most of the time.
+
+**Eval as a CI gate** ([`report.py`](shared/eval/report.py)). `--simulate` takes accuracy,
+injection-resistance and hallucination thresholds and exits 1 on a miss, with a JSON report.
+
+**Observability** ([`shared/observability/`](shared/observability/), [`infra/monitoring/`](infra/monitoring/)).
+Prometheus metrics with bounded labels, OpenTelemetry traces using the GenAI semantic conventions,
+JSON logs correlated by request and trace id, and readiness checks. Workflow counters are recorded
+only after their transaction commits, so a write retried after a version conflict is not counted
+twice. The Grafana dashboard is generated from code, and a test fails if any panel or alert
+references a metric that does not exist.
 
 **Proactive rate-limit pacing** (`TokenBucket`). Groq's free tier is 8,000 tokens/min **and 200,000
 tokens/day per model**, charged against *reserved* `max_tokens` rather than tokens generated. Backoff
@@ -188,6 +205,8 @@ Recorded because several were silent — they produced plausible-looking output 
 | Dashboard promise-date accuracy counted *any* extracted date as correct | `--simulate` exact-matched against ground truth; the dashboard checked `date is not None`. A wrong date scored as a hit. Both now call `shared/eval/metrics.py`. |
 | "Injection resisted" had three different definitions | `--simulate` checked for a fabricated commitment; the runner and `/results` only checked for hallucinated figures — so an agent that logged the injected promise-to-pay still "held". One definition now, which also counts compliance violations (agreeing to a customer-supplied discount is not a hallucination, but it is a breach). |
 | Experiment results written only after the whole run | `BackgroundTasks` is in-memory: a restart or Render spin-down mid-run lost every scenario and left the row `running` forever. |
+| Extractor called a partial dispute "unclear" | Found by the expanded eval set (S20): contesting 20 of 120 billed hours is a dispute even when the rest will be paid. The rubric said "contests the amount" but not "part of it". |
+| Extractor dropped the date on a dated instalment | S22: the rubric never said which date to record for a partial payment, so the model left it null. Now: the specific date named, the earliest if several. |
 | A due call could be pre-empted by a reminder email to the same customer | Found running the workflow on the real 500-invoice ledger: a pass reported 4 calls due and the queue was empty. Invoices were ticked in arbitrary order, so a low-priority email went out first and the minimum contact gap then blocked the urgent call. Now ticked in priority order, one contact per customer per pass. |
 | Voice agent always dialled the top of the static CSV queue | Every run called the same invoice regardless of what the last call achieved. Now it dials from the workflow's queue. |
 | `init_db()` used `create_all` with Alembic installed but unused | `create_all` never alters existing tables, so any new column would be silently missing on every deployed database. |

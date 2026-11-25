@@ -39,6 +39,12 @@ presentation order that bias lands entirely on one variant, and the resulting nu
 ordering rather than quality. `judge_pairwise` randomises the order per scenario from a fixed seed —
 reproducible, auditable, and unbiased — then maps the verdict back to A/B.
 
+**A win is not reported unless it is real.** With tens of scenarios, a 10–8 split is about as likely
+to be chance as not. `/results` carries an exact sign test on head-to-head wins, 95% Wilson intervals
+on each win-rate, and a paired bootstrap interval on the composite difference, and the verdict says
+"not significant" when it isn't. A per-tag breakdown shows *where* a variant wins or fails (disputes,
+multi-currency, adversarial), not just whether.
+
 **Extraction accuracy is scored against ground truth, not the judge.** Every eval scenario declares
 its correct outcome and, where applicable, the exact promise-to-pay date. An agent and a judge can
 agree with each other and both be wrong.
@@ -101,7 +107,7 @@ Drive it entirely from <http://127.0.0.1:8000/docs> — no frontend needed:
 | 3 | `GET /experiments/{id}` — poll until `status` is `completed` (`completed_count` advances per scenario) |
 | 4 | `GET /experiments/{id}/results` — win-rate, latency, hallucination-rate, per-scenario breakdown |
 
-Add `{"limit": 3}` to `POST /experiments` for a fast smoke run instead of all 18 scenarios.
+Add `{"limit": 3}` to `POST /experiments` for a fast smoke run instead of all 28 scenarios.
 
 Runs are durable. Each scenario's results are committed as soon as it finishes, so `/results` is
 readable mid-run. If the process restarts, the run resumes from the last stored scenario rather than
@@ -153,6 +159,29 @@ and outstanding balance, and feeds the outcome back in. If nothing is due it cal
 
 Switch with `VOICE_PROVIDER=local|cloud`; everything routes through `voice_agent/voice_factory.py`.
 
+## Monitoring
+
+| Signal | Where | Notes |
+|---|---|---|
+| Metrics | `GET /metrics` (Prometheus) | LLM requests, latency, tokens, failovers and pacing; call outcomes, judge scores, hallucinations and compliance per prompt version; dunning contacts, transitions, tasks, open/overdue tasks per team, calls due, outstanding balance by tier; experiments; HTTP by route template |
+| Traces | OTLP, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set | One span per request, LLM call (GenAI semantic conventions), simulated call, experiment run and scheduler pass |
+| Logs | stdout; `LOG_FORMAT=json` for pipelines | Every line carries the request id (from `X-Request-ID` or generated) and the active trace/span id |
+| Health | `/health` (liveness), `/health/ready` | Readiness fails with 503 if the database is unreachable, the schema is behind, or the scheduler has stalled |
+
+A full local stack, with Prometheus and alert rules, a pre-built Grafana dashboard and Jaeger, is
+one command:
+
+```bash
+docker compose -f infra/docker-compose.monitoring.yml up -d
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 LOG_FORMAT=json \
+  uv run --extra observability uvicorn ab_dashboard.main:app --host 0.0.0.0
+# Grafana http://localhost:3000 · Prometheus http://localhost:9090 · Jaeger http://localhost:16686
+```
+
+Alerts cover a stalled scheduler, tasks past SLA, any compliance violation, a rising hallucination
+rate, LLM failure and failover, latency, API errors and the app going down. A test fails if any alert
+or dashboard panel references a metric the app does not export.
+
 ### Two things that will bite you if you follow older guides
 
 - **`llama-3.3-70b-versatile` and `llama-3.1-8b-instant` were decommissioned on 2026-08-16.**
@@ -165,12 +194,15 @@ Switch with `VOICE_PROVIDER=local|cloud`; everything routes through `voice_agent
 ## Layout
 
 ```
-shared/            models, config, LLM failover client, prompt store, judge + rubric
-data/              dataset generator, eval_scenarios.yaml (18 scenarios, 2 adversarial)
+shared/            models, config, LLM failover client, prompt store
+shared/eval/       judge, rubric, metric definitions, significance stats, sweep report + gate
+shared/observability/  Prometheus metrics, OpenTelemetry tracing, structured logging
+data/              dataset generator, eval_scenarios.yaml (28 scenarios, 5 adversarial)
 voice_agent/       risk tiering, prompts/, LiveKit agent, simulator, extractor, call logger
 workflow/          dunning policy YAML, contact scheduler, state machine, workflow service
 ab_dashboard/      FastAPI app, models + Alembic migrations, experiment runner, durable jobs, routers
-tests/             287 tests, no network calls
+infra/             Dockerfile, Render blueprint, Kokoro TTS, monitoring stack (Prometheus, Grafana, Jaeger)
+tests/             348 tests, no network calls
 ```
 
 ## Data provenance
@@ -180,7 +212,7 @@ There are **two independent data sources**, and it matters which is which:
 | | Origin | Drives |
 |---|---|---|
 | `data/synthetic/ar_dataset_enriched.csv` | Kaggle base + Faker enrichment | the agent's call queue — which invoice `console` mode dials |
-| `data/eval_scenarios.yaml` | hand-written, 18 scenarios | the A/B dashboard **and** `--simulate` |
+| `data/eval_scenarios.yaml` | hand-written, 28 scenarios | the A/B dashboard **and** `--simulate` |
 
 The eval scenarios pin their own invoices (`INV-200001`…) with deliberately chosen tiers and
 personas. They never read the generated CSV, so **the Kaggle base does not influence any A/B
@@ -207,19 +239,29 @@ the critical cases still surface first.
 
 ## The eval set
 
-18 scenarios covering every outcome type — cooperative, evasive, disputed, already-paid, hostile,
-gatekeeper, voicemail, multi-currency, GST query — each pinning an invoice, a scripted customer, and
-ground truth.
+28 scenarios covering every outcome type — cooperative, evasive, disputed (including a partial
+dispute), already-paid, hostile, gatekeeper, voicemail, callback request, instalment plan, repeat
+promise — across INR, USD, EUR and GBP and a code-mixed Hindi-English call. Each pins an invoice, a
+scripted customer, and a single unambiguous ground truth.
 
-Two are **adversarial**: the customer's speech contains prompt injections instructing the agent to
-cancel the invoice or to log a commitment that was never made. A correct agent treats customer
-speech as data, never as instruction. `adversarial_held_a/b` in the results reports which variant
-resisted them.
+Five are **adversarial**, each a different attack: two prompt injections (cancel the invoice, log a
+commitment never made), payment-diversion fraud ("confirm our new bank account"), compliance baiting
+(goading the agent into a legal threat), and fishing for another customer's balance. A correct agent
+treats customer speech as data, never as instruction. Resistance requires no hallucinated figure, no
+compliance violation, and no planted outcome.
+
+The sweep doubles as a CI gate:
+
+```bash
+uv run python -m voice_agent.agent --simulate \
+  --min-accuracy 0.85 --require-injections-resisted --max-hallucination-rate 0.05 \
+  --report eval-report.json        # exits 1 if any threshold is missed
+```
 
 ## Tests
 
 ```bash
-uv run pytest                    # 287 tests, fully mocked, no API calls
+uv run pytest                    # 348 tests, fully mocked, no API calls
 uv run ruff check .
 ```
 
@@ -243,5 +285,8 @@ TEST_POSTGRES_URL=postgresql://... uv run pytest tests/test_db_and_api.py
    (`AutoModelForTDT`, no NeMo) and beats whisper-large-v3-turbo by ~1.5–2 points of WER on English
    while running fully offline. It needs a custom `stt.STT` subclass since LiveKit ships no official
    plugin. `voice_factory.py` is structured to take it as a third branch.
-2. Expand adversarial coverage beyond the two injection scenarios.
-3. Payment-date risk model feeding the dunning prioritisation.
+2. **Streaming.** Time-to-first-token per turn in the simulator, so the concise prompt's latency
+   claim is measured rather than assumed, and live experiment progress over SSE.
+3. **CI.** GitHub Actions running lint, tests and a gated 3-scenario `--simulate` smoke run.
+4. **API authentication** and a CORS allow-list in place of `*`.
+5. Payment-date risk model feeding the dunning prioritisation.
