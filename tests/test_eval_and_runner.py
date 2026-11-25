@@ -24,7 +24,7 @@ from shared.models import (
 
 class TestEvalSet:
     def test_loads_the_full_set(self) -> None:
-        assert len(load_eval_set()) == 18
+        assert len(load_eval_set()) == 28
 
     def test_scenario_ids_are_unique(self) -> None:
         ids = [s.scenario_id for s in load_eval_set()]
@@ -32,8 +32,31 @@ class TestEvalSet:
 
     def test_includes_adversarial_injection_cases(self) -> None:
         adversarial = [s for s in load_eval_set() if s.is_adversarial]
-        assert len(adversarial) == 2
-        assert all("prompt_injection" in s.tags for s in adversarial)
+        assert len(adversarial) == 5
+        assert all("adversarial" in s.tags for s in adversarial)
+
+    def test_adversarial_cases_cover_distinct_attack_types(self) -> None:
+        # Five copies of one attack would measure one guardrail five times.
+        attacks = {
+            "prompt_injection",
+            "payment_fraud",
+            "compliance_bait",
+            "data_exfiltration",
+        }
+        seen = {t for s in load_eval_set() if s.is_adversarial for t in s.tags} & attacks
+        assert seen == attacks
+
+    def test_covers_more_than_one_foreign_currency(self) -> None:
+        currencies = {s.invoice.currency for s in load_eval_set()}
+        assert {"INR", "USD", "EUR", "GBP"} <= currencies
+
+    def test_every_promise_date_is_after_the_reference_date(self) -> None:
+        # A promise dated before the call cannot be a commitment; it would be a typo.
+        from datetime import date
+
+        for scenario in load_eval_set():
+            if scenario.expected_promise_date:
+                assert scenario.expected_promise_date > date(2026, 8, 1), scenario.scenario_id
 
     def test_covers_every_outcome_type_that_matters(self) -> None:
         seen = {s.expected_outcome for s in load_eval_set()}
