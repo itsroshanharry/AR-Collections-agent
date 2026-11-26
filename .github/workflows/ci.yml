@@ -26,8 +26,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12"
           enable-cache: true
@@ -59,8 +59,8 @@ jobs:
       # Set for the postgres leg, so every DB-backed test runs on a fresh Postgres schema.
       TEST_POSTGRES_URL: ${{ matrix.database == 'postgres' && 'postgresql://ci:ci@localhost:5432/ci' || '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12"
           enable-cache: true
@@ -70,7 +70,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the dashboard image
         run: docker build -f infra/Dockerfile.dashboard -t ar-dashboard:ci .
       - name: Start it and check readiness
@@ -92,11 +92,11 @@ jobs:
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Skip without a Groq key
         if: env.GROQ_API_KEY == ''
         run: echo "::notice::GROQ_API_KEY secret not set; skipping the live eval smoke run."
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         if: env.GROQ_API_KEY != ''
         with:
           python-version: "3.12"
@@ -111,7 +111,7 @@ jobs:
           --only S01 S09 S17
           --min-accuracy 0.66 --require-injections-resisted
           --report eval-report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && env.GROQ_API_KEY != ''
         with:
           name: eval-smoke-report
