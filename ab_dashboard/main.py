@@ -19,6 +19,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -27,11 +28,17 @@ from ab_dashboard import health as readiness
 from ab_dashboard import jobs
 from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
 from ab_dashboard.routers import dunning, experiments, prompts
-from shared.config import get_settings
+from shared.config import REPO_ROOT, get_settings
 from shared.observability import metrics as m
 from shared.observability.logging import configure_logging, request_id_var
 from shared.observability.tracing import setup_tracing, tracer
 from workflow import service as dunning_service
+
+# Settings parses .env itself, but the OpenTelemetry and Langfuse variables are read from
+# the real process environment (the OTel exporter reads them directly, per its spec).
+# Without this, keys put in .env would be silently ignored here. Real environment
+# variables still win, so a deployment's settings are never overridden by a stray file.
+load_dotenv(REPO_ROOT / ".env")
 
 _settings = get_settings()
 configure_logging(_settings.log_format, _settings.log_level)

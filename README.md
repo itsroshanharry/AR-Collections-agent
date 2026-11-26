@@ -166,9 +166,13 @@ Switch with `VOICE_PROVIDER=local|cloud`; everything routes through `voice_agent
 | Signal | Where | Notes |
 |---|---|---|
 | Metrics | `GET /metrics` (Prometheus) | LLM requests, latency, tokens, failovers and pacing; call outcomes, judge scores, hallucinations and compliance per prompt version; dunning contacts, transitions, tasks, open/overdue tasks per team, calls due, outstanding balance by tier; experiments; HTTP by route template |
-| Traces | OTLP, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set | One span per request, LLM call (GenAI semantic conventions), simulated call, experiment run and scheduler pass |
+| Traces | [Langfuse](https://langfuse.com) when `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` are set; any OTLP backend via `OTEL_EXPORTER_OTLP_ENDPOINT` (both at once is fine) | One trace per request or experiment run: the scheduler pass, each simulated call, the judge and extractor with their verdicts, and every LLM call with model, tokens and finish reason (GenAI semantic conventions). Live voice calls add LiveKit's own turn, STT and TTS spans. Prompt and completion text only with `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, since transcripts hold customer data |
 | Logs | stdout; `LOG_FORMAT=json` for pipelines | Every line carries the request id (from `X-Request-ID` or generated) and the active trace/span id |
 | Health | `/health` (liveness), `/health/ready` | Readiness fails with 503 if the database is unreachable, the schema is behind, or the scheduler has stalled |
+
+Metrics and traces split by job: **Prometheus and Grafana** for the system (workflow health, SLAs,
+alerts), **Langfuse** for the LLM calls (each prompt, completion, token count and verdict, grouped per
+experiment). Both are free at this scale.
 
 A full local stack, with Prometheus and alert rules, a pre-built Grafana dashboard and Jaeger, is
 one command:
