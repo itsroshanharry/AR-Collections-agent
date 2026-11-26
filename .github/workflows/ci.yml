@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -60,7 +60,7 @@ jobs:
       TEST_POSTGRES_URL: ${{ matrix.database == 'postgres' && 'postgresql://ci:ci@localhost:5432/ci' || '' }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -96,7 +96,7 @@ jobs:
       - name: Skip without a Groq key
         if: env.GROQ_API_KEY == ''
         run: echo "::notice::GROQ_API_KEY secret not set; skipping the live eval smoke run."
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0
         if: env.GROQ_API_KEY != ''
         with:
           python-version: "3.12"

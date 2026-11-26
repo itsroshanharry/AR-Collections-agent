@@ -29,7 +29,7 @@ jobs:
           echo "::error::Set the GROQ_API_KEY repository secret to run the eval sweep."
           exit 1
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           python-version: "3.12"
           enable-cache: true
