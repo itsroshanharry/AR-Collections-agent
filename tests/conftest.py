@@ -72,3 +72,30 @@ def database_url(tmp_path) -> str:
         conn.execute("DROP SCHEMA public CASCADE")
         conn.execute("CREATE SCHEMA public")
     return postgres
+
+
+_SPAN_EXPORTER = None
+
+
+@pytest.fixture
+def spans():
+    """Record finished spans in memory for the duration of a test.
+
+    OpenTelemetry allows one global tracer provider per process, so it is installed once
+    and the exporter cleared per test. Module-level `tracer` objects are proxies that
+    pick it up whenever it is installed.
+    """
+    global _SPAN_EXPORTER
+    if _SPAN_EXPORTER is None:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+        _SPAN_EXPORTER = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(_SPAN_EXPORTER))
+        trace.set_tracer_provider(provider)
+    _SPAN_EXPORTER.clear()
+    yield _SPAN_EXPORTER
+    _SPAN_EXPORTER.clear()

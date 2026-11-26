@@ -13,6 +13,7 @@ from datetime import date
 
 from shared.llm_client import LLMClient, LLMResponse
 from shared.models import CallOutcome, Invoice, OutcomeType
+from shared.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ Rules:
 - confidence: 0.0 to 1.0, reflecting how unambiguous the customer's commitment was."""
 
 
-async def extract_outcome(
+async def _extract_outcome(
     client: LLMClient,
     invoice: Invoice,
     transcript: str,
@@ -113,3 +114,23 @@ TRANSCRIPT:
         )
 
     return outcome, resp
+
+
+async def extract_outcome(
+    client: LLMClient,
+    invoice: Invoice,
+    transcript: str,
+    *,
+    reference_date: date | None = None,
+) -> tuple[CallOutcome, LLMResponse]:
+    """Extract the structured outcome of one call from its transcript."""
+    with tracer.start_as_current_span("eval.extract") as span:
+        span.set_attribute("invoice.id", invoice.invoice_id)
+        outcome, resp = await _extract_outcome(
+            client, invoice, transcript, reference_date=reference_date
+        )
+        span.set_attribute("call.outcome", outcome.outcome.value)
+        span.set_attribute("call.outcome_confidence", outcome.confidence)
+        if outcome.promise_to_pay_date:
+            span.set_attribute("call.promise_to_pay_date", outcome.promise_to_pay_date.isoformat())
+        return outcome, resp

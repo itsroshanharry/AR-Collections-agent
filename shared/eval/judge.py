@@ -11,6 +11,7 @@ from shared.eval.rubric import (
 )
 from shared.llm_client import LLMClient, LLMResponse
 from shared.models import Invoice, JudgeDimension, JudgeScore, OutcomeType, PairwiseVerdict
+from shared.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,34 @@ async def judge_transcript(
     *,
     assigned_tone: str,
     expected_outcome: OutcomeType | None = None,
+) -> tuple[JudgeScore, LLMResponse]:
+    # Named span around the judge's llm.complete child, so a trace reads "judge scored
+    # this call 3.8, flagged one figure" rather than an anonymous model call.
+    with tracer.start_as_current_span("eval.judge") as span:
+        span.set_attribute("invoice.id", invoice.invoice_id)
+        span.set_attribute("eval.assigned_tone", assigned_tone)
+        score, resp = await _judge_transcript(
+            client,
+            invoice,
+            transcript,
+            assigned_tone=assigned_tone,
+            expected_outcome=expected_outcome,
+        )
+        span.set_attribute("eval.composite", score.composite)
+        span.set_attribute("eval.hallucinated_figures", score.hallucinated_figures)
+        span.set_attribute("eval.compliance_violations", score.compliance_violations)
+        for dim, value in score.scores.items():
+            span.set_attribute(f"eval.score.{dim.value}", value)
+        return score, resp
+
+
+async def _judge_transcript(
+    client: LLMClient,
+    invoice: Invoice,
+    transcript: str,
+    *,
+    assigned_tone: str,
+    expected_outcome: OutcomeType | None,
 ) -> tuple[JudgeScore, LLMResponse]:
     agent_turns, customer_turns = split_transcript(transcript)
     candidates = candidate_hallucinations(invoice, agent_turns, customer_turns)
@@ -88,9 +117,7 @@ async def judge_transcript(
     invented = [f for f in score.hallucinated_figures if f not in candidates]
     if invented:
         logger.warning("Judge reported figures absent from the pre-check: %s", invented)
-        score.hallucinated_figures = [
-            f for f in score.hallucinated_figures if f in candidates
-        ]
+        score.hallucinated_figures = [f for f in score.hallucinated_figures if f in candidates]
 
     return score, resp
 
@@ -111,6 +138,33 @@ async def judge_pairwise(
     randomised here, so a run is reproducible and the order actually used is auditable.
     The judge only ever sees "first"/"second"; the mapping back to A/B happens here.
     """
+    with tracer.start_as_current_span("eval.pairwise") as span:
+        span.set_attribute("invoice.id", invoice.invoice_id)
+        span.set_attribute("eval.presented_a_first", present_a_first)
+        winner, verdict, resp = await _judge_pairwise(
+            client,
+            invoice,
+            transcript_a,
+            transcript_b,
+            assigned_tone=assigned_tone,
+            expected_outcome=expected_outcome,
+            present_a_first=present_a_first,
+        )
+        span.set_attribute("eval.winner", winner)
+        span.set_attribute("eval.confidence", verdict.confidence)
+        return winner, verdict, resp
+
+
+async def _judge_pairwise(
+    client: LLMClient,
+    invoice: Invoice,
+    transcript_a: str,
+    transcript_b: str,
+    *,
+    assigned_tone: str,
+    expected_outcome: OutcomeType | None,
+    present_a_first: bool,
+) -> tuple[str, PairwiseVerdict, LLMResponse]:
     first, second = (
         (transcript_a, transcript_b) if present_a_first else (transcript_b, transcript_a)
     )
