@@ -30,6 +30,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     inspect,
 )
 from sqlalchemy.engine import Connection
@@ -323,11 +324,26 @@ _engine = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
+def _is_sqlite(engine) -> bool:
+    return engine.dialect.name == "sqlite"
+
+
+def _enforce_sqlite_foreign_keys(dbapi_connection, _record) -> None:
+    # SQLite ignores foreign keys unless asked, per connection. Without this, local runs
+    # accept writes that Postgres rejects, and a missing parent row is only discovered
+    # after deploying.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 def get_engine():
     global _engine, _sessionmaker
     if _engine is None:
         url = normalise_database_url(get_settings().database_url)
         _engine = create_async_engine(url, echo=False, pool_pre_ping=True)
+        if _is_sqlite(_engine):
+            event.listen(_engine.sync_engine, "connect", _enforce_sqlite_foreign_keys)
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 
@@ -371,8 +387,21 @@ async def init_db() -> None:
     would silently be absent on any database that predates it.
     """
     engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(_upgrade)
+    async with engine.connect() as conn:
+        if _is_sqlite(engine):
+            # Off for the duration of migrations. SQLite cannot ALTER most constraints,
+            # so Alembic rebuilds a table by copying it and dropping the original - and
+            # with enforcement on, dropping a parent table fires ON DELETE CASCADE and
+            # empties its children. This is Alembic's documented requirement for batch
+            # mode on SQLite. Issued before any write, so outside a transaction, where
+            # SQLite honours it.
+            await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        try:
+            await conn.run_sync(_upgrade)
+            await conn.commit()
+        finally:
+            if _is_sqlite(engine):
+                await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

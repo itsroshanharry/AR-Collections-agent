@@ -319,3 +319,57 @@ async def test_tags_migration_backfills_existing_results(db) -> None:
     async with db.get_engine().connect() as conn:
         tags = (await conn.execute(text("SELECT tags FROM experiment_results"))).scalar()
     assert (json.loads(tags) if isinstance(tags, str) else tags) == []
+
+
+async def test_migrations_never_cascade_delete_existing_rows(db) -> None:
+    # On SQLite, Alembic rebuilds a table it cannot ALTER (copy, drop, rename). If that
+    # table is a parent and foreign keys are enforced, the drop fires ON DELETE CASCADE
+    # and empties its children. Today's migrations only rebuild child tables, so this
+    # guards the next migration that rebuilds a parent: existing rows must survive.
+    async with db.get_engine().connect() as conn:
+        if conn.dialect.name == "sqlite":
+            await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        await conn.run_sync(lambda c: command.upgrade(_alembic_config(c), "0001"))
+        await conn.execute(
+            text(
+                "INSERT INTO experiments (id, variant_a_id, variant_b_id, eval_set, status, "
+                "scenario_count, completed_count, created_at) "
+                "VALUES ('e1', 'a', 'b', 'x', 'completed', 1, 1, '2026-01-01')"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO experiment_results (id, experiment_id, scenario_id, variant_label, "
+                "prompt_id, transcript, scores, composite, hallucinated, hallucinated_figures, "
+                "compliance_violations, judge_rationale, outcome_match, total_latency_ms, "
+                "mean_turn_latency_ms, provider, is_adversarial, created_at, pairwise_reason) "
+                "VALUES ('r1', 'e1', 'S01', 'A', 'a', '', '{}', 4.0, FALSE, '[]', '[]', '', TRUE, "
+                "0, 0, '', FALSE, '2026-01-01', '')"
+            )
+        )
+        await conn.commit()
+    # A fresh engine, so init_db runs on a new connection with enforcement switched on
+    # by the connect hook, not on this one where the setup switched it off.
+    await db.dispose_engine()
+
+    await db.init_db()
+
+    async with db.get_engine().connect() as conn:
+        count = (await conn.execute(text("SELECT count(*) FROM experiment_results"))).scalar()
+    assert count == 1
+
+
+async def test_foreign_keys_are_enforced_after_migrating(db) -> None:
+    # SQLite ignores foreign keys by default; local runs must reject what Postgres does.
+    from sqlalchemy.exc import IntegrityError
+
+    await db.init_db()
+    with pytest.raises(IntegrityError):
+        async with db.get_engine().begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO invoice_events (invoice_id, event, from_state, to_state, tier, "
+                    "detail, created_at) VALUES ('NO-SUCH-INVOICE', 'x', '', '', 'low', '{}', "
+                    "'2026-01-01')"
+                )
+            )

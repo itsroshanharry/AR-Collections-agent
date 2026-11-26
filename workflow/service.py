@@ -376,6 +376,11 @@ async def _add_invoice(
 ) -> InvoiceStateRow:
     row = _new_row(invoice, now)
     session.add(row)
+    # Written before anything that references it. The events, tasks and contact
+    # attempts below carry a foreign key to this row, and with no ORM relationship
+    # declared, the unit of work does not know to insert the parent first. Postgres
+    # rejects the child insert; SQLite without FK enforcement silently accepted it.
+    await session.flush()
     session.add(_log_event(row, "synced", "", now, tier=row.tier))
     if invoice.dispute_flag:
         # Already contested in the ledger: route to the disputes desk, not the dialler.
