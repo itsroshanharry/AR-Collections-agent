@@ -26,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 
 from shared.config import Settings, get_settings
 from shared.observability import metrics as m
-from shared.observability.tracing import tracer
+from shared.observability.tracing import capture_message_content, tracer
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +285,22 @@ def _extract_json(text: str) -> str:
     return text[start:]
 
 
+# Long enough for a full call transcript; bounded so one span cannot be megabytes.
+_MAX_CONTENT_CHARS = 8000
+
+
+def _attach_content(span, messages: list[dict[str, str]], completion: str) -> None:
+    """Prompt and completion text, in the indexed GenAI attribute form that Langfuse and
+    other LLM-observability backends read as a generation's input and output."""
+    for i, message in enumerate(messages):
+        span.set_attribute(f"gen_ai.prompt.{i}.role", message.get("role", ""))
+        span.set_attribute(
+            f"gen_ai.prompt.{i}.content", str(message.get("content", ""))[:_MAX_CONTENT_CHARS]
+        )
+    span.set_attribute("gen_ai.completion.0.role", "assistant")
+    span.set_attribute("gen_ai.completion.0.content", completion[:_MAX_CONTENT_CHARS])
+
+
 class LLMClient:
     def __init__(
         self,
@@ -388,12 +404,15 @@ class LLMClient:
                 span.set_attribute("error.type", "all_providers_failed")
                 raise
             span.set_attribute("gen_ai.system", result.provider)
+            span.set_attribute("gen_ai.request.model", result.model)
             span.set_attribute("gen_ai.response.model", result.model)
             span.set_attribute("gen_ai.usage.input_tokens", result.prompt_tokens)
             span.set_attribute("gen_ai.usage.output_tokens", result.completion_tokens)
             span.set_attribute("gen_ai.usage.reasoning_tokens", result.reasoning_tokens)
             span.set_attribute("gen_ai.response.finish_reasons", [result.finish_reason])
             span.set_attribute("llm.attempts", result.attempts)
+            if capture_message_content():
+                _attach_content(span, messages, result.text)
             return result
 
     async def _complete(

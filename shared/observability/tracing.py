@@ -2,10 +2,18 @@
 
 Code everywhere calls `tracer.start_as_current_span(...)`. With only the OpenTelemetry
 API installed (a core dependency), those calls are no-ops. `setup_tracing()` swaps in a
-real SDK exporter when one is configured:
+real SDK exporter when one is configured. Any combination may be set at once:
 
     OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318   # Jaeger, Tempo, Honeycomb, ...
+    LANGFUSE_PUBLIC_KEY=pk-lf-...                       # Langfuse, for LLM traces
+    LANGFUSE_SECRET_KEY=sk-lf-...
+    LANGFUSE_HOST=https://cloud.langfuse.com            # or us./jp. region, or self-hosted
     OTEL_TRACES_CONSOLE=1                               # print spans, for local debugging
+
+Langfuse ingests standard OTLP, so no Langfuse SDK is needed: the same spans go to it,
+and its GenAI mapping turns `llm.complete` spans into generations with model, tokens and
+cost. Prompt and completion text is only attached when explicitly enabled (see
+`capture_message_content`), because call transcripts contain customer names and figures.
 
 The SDK and exporter live in the optional `observability` extra, so the voice agent and
 tests do not need them.
@@ -13,6 +21,7 @@ tests do not need them.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 
@@ -35,8 +44,9 @@ def setup_tracing(service_name: str) -> bool:
         return True
 
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    console = os.getenv("OTEL_TRACES_CONSOLE", "").lower() in ("1", "true", "yes")
-    if not endpoint and not console:
+    console = _truthy(os.getenv("OTEL_TRACES_CONSOLE"))
+    langfuse = langfuse_exporter_config()
+    if not endpoint and not console and not langfuse:
         return False
 
     try:
@@ -56,6 +66,10 @@ def setup_tracing(service_name: str) -> bool:
 
         # Reads OTEL_EXPORTER_OTLP_ENDPOINT / _HEADERS itself, per the OTel spec.
         provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    if langfuse:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(**langfuse)))
     if console:
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
     trace.set_tracer_provider(provider)
@@ -63,9 +77,54 @@ def setup_tracing(service_name: str) -> bool:
     logger.info(
         "Tracing enabled for %s (%s)",
         service_name,
-        ", ".join(filter(None, [endpoint and f"OTLP {endpoint}", console and "console"])),
+        ", ".join(
+            filter(
+                None,
+                [
+                    endpoint and f"OTLP {endpoint}",
+                    langfuse and f"Langfuse {langfuse['endpoint']}",
+                    console and "console",
+                ],
+            )
+        ),
     )
     return True
+
+
+def is_enabled() -> bool:
+    return _configured
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in ("1", "true", "yes")
+
+
+def langfuse_exporter_config() -> dict | None:
+    """OTLP exporter arguments for Langfuse, or None if its keys are not set.
+
+    Built here rather than through OTEL_EXPORTER_OTLP_HEADERS so the Basic-auth header
+    needs no hand-encoding, and so Langfuse can run alongside a second OTLP backend.
+    """
+    public = os.getenv("LANGFUSE_PUBLIC_KEY")
+    secret = os.getenv("LANGFUSE_SECRET_KEY")
+    if not public or not secret:
+        return None
+    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").rstrip("/")
+    token = base64.b64encode(f"{public}:{secret}".encode()).decode()
+    return {
+        "endpoint": f"{host}/api/public/otel/v1/traces",
+        "headers": {"Authorization": f"Basic {token}", "x-langfuse-ingestion-version": "4"},
+    }
+
+
+def capture_message_content() -> bool:
+    """Attach prompt and completion text to LLM spans?
+
+    Off by default: transcripts carry customer names, amounts and GSTINs, and traces
+    usually have wider access and longer retention than the database. The variable name
+    is the OpenTelemetry GenAI instrumentation standard.
+    """
+    return _truthy(os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"))
 
 
 def current_trace_ids() -> tuple[str | None, str | None]:

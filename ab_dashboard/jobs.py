@@ -31,6 +31,7 @@ import socket
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from opentelemetry import trace
 from sqlalchemy import func, or_, select, update
 
 from ab_dashboard.db import (
@@ -328,8 +329,14 @@ async def _supervise(experiment_id: str) -> None:
     m.EXPERIMENTS_ACTIVE.inc()
     span = tracer.start_span("experiment.run")
     span.set_attribute("experiment.id", experiment_id)
+    # Grouping key: every scenario's spans in one Langfuse session per experiment.
+    span.set_attribute("session.id", experiment_id)
+    span.set_attribute("langfuse.session.id", experiment_id)
     try:
-        await execute(experiment_id)
+        # Made current, so the simulated calls, judge and LLM spans of this run nest
+        # under it instead of each starting an unrelated trace.
+        with trace.use_span(span, end_on_exit=False):
+            await execute(experiment_id)
     except asyncio.CancelledError:
         # Shutdown or a lost lease. Leave it `running` with its results so far; the next
         # owner resumes from there.

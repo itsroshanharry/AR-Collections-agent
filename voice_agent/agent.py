@@ -140,6 +140,18 @@ def build_server():
 
     settings = get_settings()
 
+    from shared.observability.tracing import is_enabled
+
+    if is_enabled():
+        # LiveKit Agents emits its own spans (turns, STT, LLM, TTS). Handing it our
+        # provider puts them in the same traces, and the same backend, as everything else.
+        from livekit.agents import telemetry
+        from opentelemetry import trace
+
+        telemetry.set_tracer_provider(
+            trace.get_tracer_provider(), metadata={"service.name": "ar-voice-agent"}
+        )
+
     class CollectionsAgent(Agent):
         """One dunning call. Tool calls capture the outcome as it happens, rather than
         relying solely on a post-call extraction pass over the transcript."""
