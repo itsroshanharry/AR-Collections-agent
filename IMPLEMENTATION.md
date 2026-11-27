@@ -8,7 +8,7 @@ that produced it.
 
 | Verification | Result |
 |---|---|
-| Unit/integration tests | **348 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
+| Unit/integration tests | **439 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
 | Eval sweep (`--simulate`, original 18 scenarios, live LLM) | **16/18 outcomes (89%)**, 6/7 promise dates, **2/2 injections resisted**. Measured before the metric definitions were unified (see bugs below); re-run before quoting. |
 | Eval sweep, 10 new scenarios (S19–S28, live LLM) | **9/10** on first run, **3/3 new attacks resisted**, 0 hallucinations. Both misses were extractor gaps, fixed and re-verified with no regressions on S06/S09/S10 (5/5). |
 | Live voice call (LiveKit + Deepgram, real audio) | **composite 4.8/5**, promise-to-pay captured correctly, 0 hallucinations, 0 compliance violations |
@@ -131,12 +131,32 @@ full collections workflow, split so the rules stay auditable:
 | [`scheduler.py`](workflow/scheduler.py) | yes | Earliest *permitted* next action: caps, minimum gap, customer-local calling hours, do-not-call |
 | [`state_machine.py`](workflow/state_machine.py) | yes | Snapshot + event → new state, tasks to open, tasks to close |
 | [`service.py`](workflow/service.py) | no | Loads a row, applies the pure functions, writes state + tasks + audit event in one transaction |
+| [`cash_application.py`](workflow/cash_application.py) | yes | Bank line + open invoices → which invoices it pays, by which rule, or why it cannot be matched |
+| [`cash.py`](workflow/cash.py) | no | Ingests credits (idempotent on UTR), applies matches, runs the exceptions queue |
+| [`bank_feed.py`](workflow/bank_feed.py) | yes | The simulated bank feed the demo uses in place of a real bank |
 
 Choices worth noting: contact caps are **per customer**, not per invoice, and each customer's most
 urgent invoice leads the conversation; tiering uses the invoice **as it stands today** (aged since
 sync, net of payments); each broken promise bumps the tier; concurrent writers (scheduler, voice
 agent, a person resolving a task) are serialised by an optimistic-lock version column rather than
 locks. The voice agent dials from this queue and calls no one when nothing is due.
+
+**Customer-level collections.** Real collectors work the account, not the invoice. The call queue
+returns one call per customer, filed under their most urgent invoice and carrying the rest of the
+account; the prompt lists every overdue invoice and the account total, and the grounding check
+accepts those figures. Reminders cover the whole account. A promise applies to the whole account
+only when it is dated and for at least the account total (or names no amount); disputes, partial
+plans and smaller promises stay with the invoice they were made on, because nothing in the call
+says which other invoice they meant.
+
+**Cash application.** Marking invoices paid by hand is the part real AR systems automate. Bank
+credits are matched by ordered pure rules and applied through the existing payment path, so a
+matched payment closes the invoice and auto-resolves its verify/reconcile tasks. The rules are
+deliberately conservative: an overpayment, a short payment across several named invoices, or an
+amount that fits two invoices equally goes to a person, because applying money to the wrong
+invoice means chasing a customer who paid. "Already paid" claims are checked against the bank
+data in both directions, by the reference the customer quoted on the call. On a simulated day of
+credits the auto-match rate is around 75%, with the rest in the exceptions queue with reasons.
 
 **Durable, resumable experiments** ([`jobs.py`](ab_dashboard/jobs.py)). The database is the queue:
 a worker claims a run with one conditional `UPDATE` (atomic on SQLite and Postgres, so no Redis and
@@ -208,6 +228,7 @@ Recorded because several were silent — they produced plausible-looking output 
 | Extractor called a partial dispute "unclear" | Found by the expanded eval set (S20): contesting 20 of 120 billed hours is a dispute even when the rest will be paid. The rubric said "contests the amount" but not "part of it". |
 | Extractor dropped the date on a dated instalment | S22: the rubric never said which date to record for a partial payment, so the model left it null. Now: the specific date named, the earliest if several. |
 | A due call could be pre-empted by a reminder email to the same customer | Found running the workflow on the real 500-invoice ledger: a pass reported 4 calls due and the queue was empty. Invoices were ticked in arbitrary order, so a low-priority email went out first and the minimum contact gap then blocked the urgent call. Now ticked in priority order, one contact per customer per pass. |
+| Every synthetic invoice had its own customer name and currency | The generator drew a fresh company name for each invoice, so one customer id appeared under three names. Found building the account view and bank matching: an account payment by the customer's name could never match. Customers are now created once. |
 | Voice agent always dialled the top of the static CSV queue | Every run called the same invoice regardless of what the last call achieved. Now it dials from the workflow's queue. |
 | `init_db()` used `create_all` with Alembic installed but unused | `create_all` never alters existing tables, so any new column would be silently missing on every deployed database. |
 
@@ -215,8 +236,13 @@ Recorded because several were silent — they produced plausible-looking output 
 
 ## Not built (deliberately)
 
-- **React frontend** — optional in the plan; `/docs` is the working UI.
-- **ERP / NetSuite sync, WhatsApp OCR** — plan lists these as v2 stretch goals.
+- **Frontend** — optional in the plan; `/docs` is the working UI for now. Planned in
+  [docs/frontend-plan.md](docs/frontend-plan.md).
+- **ERP / NetSuite sync, WhatsApp OCR** — plan lists these as v2 stretch goals. The database is
+  the system of record; invoice sync and the bank feed are the two integration points an ERP and a
+  bank connection would plug into.
+- **Credit management and deductions** — credit limits and order holds, and investigating
+  deliberate B2B short payments, are separate AR functions from collections.
 - **Email and SMS delivery** — the workflow schedules and records these steps (they count toward
   the contact caps) but does not send them; an email/SMS provider is a drop-in at that one call site.
 - **Payment-date risk model** — plan lists as a next step.

@@ -8,6 +8,9 @@ Two connected deliverables for agentic AI in finance back-office automation:
    invoices, handles interruptions, and extracts promise-to-pay commitments. It is driven by a
    **risk-tiered dunning workflow**: per-tier cadences, contact-frequency and calling-hours
    rules, a per-invoice state machine, and follow-up tasks opened from every call outcome.
+   Collections work at the **customer level** (one conversation covers the whole account), and
+   **cash application** matches incoming bank credits to invoices, so payments close invoices with
+   no person involved and only the exceptions reach a human.
 2. **Prompt A/B testing dashboard** — a FastAPI service that runs two prompt versions against a
    fixed eval set and reports win-rate, latency, hallucination-rate and extraction accuracy.
 
@@ -18,8 +21,8 @@ an experiment result is a statement about the agent rather than about a proxy fo
 Runs at **$0**: free-tier LLM inference, local TTS, SQLite for dev.
 
 > Built with [Claude Code](https://claude.com/claude-code). [IMPLEMENTATION.md](IMPLEMENTATION.md)
-> records every design decision, where each deviates from the original plan and why, and the twelve
-> bugs found during the build — several of which were silent, producing plausible output while being
+> records every design decision, where each deviates from the original plan and why, and the bugs
+> found during the build — several of which were silent, producing plausible output while being
 > wrong. [SETUP.md](SETUP.md) has every command from clone to live call.
 
 ---
@@ -74,6 +77,24 @@ an "already paid" claim to reconciliation. A lapsed promise restarts the cadence
 and repeated broken promises escalate to a person. Tasks are idempotent (deduped per call), task
 resolutions drive the invoice onward, and every transition lands in an append-only audit trail.
 
+**Collect from the customer, not the invoice.** A customer with three overdue invoices gets one
+call, filed under their most urgent invoice, with the rest of the account and its total (per
+currency, never summed across currencies) in the agent's context and in the grounding check. A
+reminder email is a statement of the account, so the other invoices record the contact instead of
+each sending their own. A dated promise for the account total puts every covered invoice on that
+promise; a dispute or a smaller promise stays with the invoice it was made on.
+
+**Cash application closes invoices without a person.** Bank credits are matched by pure, ordered
+rules ([`workflow/cash_application.py`](workflow/cash_application.py)): the narrative names an
+invoice (even with the hyphen stripped, as banks do), names several and pays their total, or a
+recognised payer pays one invoice's exact balance or the whole account. Bank charges within a
+per-currency tolerance are written off. A matched credit closes the invoice and its open
+verify/reconcile tasks through the same path as any payment. Overpayments, ambiguous amounts and
+unknown payers are never guessed at: they go to an exceptions queue with the reason and the likely
+customer. When a customer tells the agent "I already paid, the UTR is ...", that reference finds
+the payment, already in the queue or arriving later, and verifies the claim automatically. The UTR
+is unique, so replaying a feed applies nothing twice.
+
 **Two independent signals per call.** The agent records outcomes live through tool calls; a separate
 extractor reads the transcript afterwards. When they disagree, a QA task opens rather than one silently
 winning.
@@ -121,14 +142,27 @@ starting over or hanging in `running` (see `ab_dashboard/jobs.py`).
 |---|---|
 | 1 | `POST /dunning/sync` — load the ledger (the generated dataset) into the workflow |
 | 2 | `POST /dunning/tick` — run a scheduler pass now (the app also runs one every 5 minutes) |
-| 3 | `GET /dunning/queue` — calls the playbook wants that the contact rules allow right now |
+| 3 | `GET /dunning/queue` — calls the playbook wants that the contact rules allow right now, one per customer |
 | 4 | `POST /dunning/invoices/{id}/outcomes` — record a call outcome (the voice agent does this itself) |
 | 5 | `GET /tasks?assignee=disputes` — a team's work queue; `PATCH /tasks/{id}` to resolve |
 | 6 | `GET /dunning/invoices/{id}` — state, tasks, contact history and the full audit trail |
+| 7 | `GET /dunning/customers/{id}` — the whole account: every invoice, balance in dunning, open work |
 
-`POST /dunning/invoices/{id}/payments` stands in for the ERP or bank feed.
+### 3. Cash application
 
-### 3. The voice agent
+There is no real bank behind the demo, so a simulated feed stands in for one.
+
+| Step | Call |
+|---|---|
+| 1 | `POST /cash/simulate` — a realistic day of credits from the open invoices: clean, part paid, bank charges, an account payment, an unknown payer, an overpayment |
+| 2 | `GET /cash/transactions?status=unmatched` — the exceptions queue, each with the reason it did not match |
+| 3 | `POST /cash/transactions/{id}/apply` or `/dismiss` — a person resolves one |
+
+`POST /cash/transactions` takes a JSON feed and `POST /cash/statement` a bank-statement CSV
+(`value_date,amount,currency,reference,payer_name,utr`). `POST /dunning/invoices/{id}/payments`
+still posts a payment to one invoice by hand.
+
+### 4. The voice agent
 
 ```bash
 # Text-only sweep over the eval set. Deterministic, no audio stack, CI-safe.
@@ -205,10 +239,11 @@ shared/eval/       judge, rubric, metric definitions, significance stats, sweep 
 shared/observability/  Prometheus metrics, OpenTelemetry tracing, structured logging
 data/              dataset generator, eval_scenarios.yaml (28 scenarios, 5 adversarial)
 voice_agent/       risk tiering, prompts/, LiveKit agent, simulator, extractor, call logger
-workflow/          dunning policy YAML, contact scheduler, state machine, workflow service
+workflow/          dunning policy YAML, contact scheduler, state machine, workflow service,
+                   cash application (matcher, service, simulated bank feed)
 ab_dashboard/      FastAPI app, models + Alembic migrations, experiment runner, durable jobs, routers
 infra/             Dockerfile, Render blueprint, Kokoro TTS, monitoring stack (Prometheus, Grafana, Jaeger)
-tests/             348 tests, no network calls
+tests/             440 tests, no network calls
 ```
 
 ## Data provenance
@@ -267,7 +302,7 @@ uv run python -m voice_agent.agent --simulate \
 ## Tests
 
 ```bash
-uv run pytest                    # 348 tests, fully mocked, no API calls
+uv run pytest                    # 440 tests, fully mocked, no API calls
 uv run ruff check .
 ```
 
@@ -300,6 +335,8 @@ provider-side model drift. Both live runs need a `GROQ_API_KEY` repository secre
    plugin. `voice_factory.py` is structured to take it as a third branch.
 2. **Streaming.** Time-to-first-token per turn in the simulator, so the concise prompt's latency
    claim is measured rather than assumed, and live experiment progress over SSE.
-3. **CI.** GitHub Actions running lint, tests and a gated 3-scenario `--simulate` smoke run.
-4. **API authentication** and a CORS allow-list in place of `*`.
+3. **Frontend and deployment.** An operator console served by the API itself, deployed to Render
+   with Neon Postgres: see [docs/frontend-plan.md](docs/frontend-plan.md).
+4. **API authentication** (role-scoped keys, a read-only public demo) and a CORS allow-list in
+   place of `*`.
 5. Payment-date risk model feeding the dunning prioritisation.
