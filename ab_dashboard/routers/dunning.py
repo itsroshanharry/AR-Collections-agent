@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from ab_dashboard.db import ContactAttemptRow, InvoiceEventRow, InvoiceStateRow, TaskRow
 from shared.models import AccountItem, CallOutcome, OutcomeType
-from workflow import service
+from workflow import service, views
 from workflow.policy import TaskType
 from workflow.state_machine import RESOLUTIONS, TransitionError
 
@@ -105,6 +106,36 @@ class DueCallOut(BaseModel):
     # One call per customer: the rest of the account it covers, and the total to ask for.
     other_open_invoices: list[AccountItemOut]
     account_total: dict[str, str]
+
+
+class SummaryOut(BaseModel):
+    invoices: int
+    invoices_by_state: dict[str, int]
+    invoices_by_tier: dict[str, int]
+    outstanding_inr_by_tier: dict[str, str]
+    customers_with_calls_due: int
+    open_tasks_by_team: dict[str, int]
+    overdue_tasks_by_team: dict[str, int]
+    bank_transactions_by_status: dict[str, int]
+    auto_match_rate: float | None
+
+
+class CustomerRowOut(BaseModel):
+    customer_id: str
+    customer_name: str
+    invoices: int
+    open_invoices: int
+    tier: str | None
+    overdue_in_dunning: dict[str, str]
+    outstanding: dict[str, str]
+    outstanding_inr: str
+    open_tasks: int
+    states: dict[str, int]
+
+
+class CustomerPageOut(BaseModel):
+    total: int
+    customers: list[CustomerRowOut]
 
 
 class CustomerInvoiceOut(InvoiceStateOut):
@@ -286,6 +317,48 @@ async def call_queue(limit: int = Query(default=20, ge=1, le=200)) -> list[DueCa
         )
         for d in await service.due_calls(limit=limit)
     ]
+
+
+@router.get("/summary", response_model=SummaryOut)
+async def get_summary() -> SummaryOut:
+    """The overview in one call: the book by state and tier, calls due, each team's
+    queue and SLA breaches, and how cash application is doing."""
+    s = await views.summary()
+    return SummaryOut(
+        **{**s.__dict__, "outstanding_inr_by_tier": _money(s.outstanding_inr_by_tier)}
+    )
+
+
+@router.get("/customers", response_model=CustomerPageOut)
+async def list_customers(
+    q: str | None = Query(default=None, description="Search name or customer id"),
+    tier: str | None = Query(default=None, examples=["high"]),
+    has_open_tasks: bool | None = None,
+    sort: Literal["outstanding", "name", "tier"] = "outstanding",
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> CustomerPageOut:
+    """Customers with their balances and worst open risk tier, largest exposure first."""
+    try:
+        page = await views.list_customers(
+            q=q, tier=tier, has_open_tasks=has_open_tasks, sort=sort, limit=limit, offset=offset
+        )
+    except Exception as exc:  # noqa: BLE001
+        _raise_for(exc)
+    return CustomerPageOut(
+        total=page.total,
+        customers=[
+            CustomerRowOut(
+                **{
+                    **c.__dict__,
+                    "overdue_in_dunning": _money(c.overdue_in_dunning),
+                    "outstanding": _money(c.outstanding),
+                    "outstanding_inr": f"{c.outstanding_inr:.2f}",
+                }
+            )
+            for c in page.customers
+        ],
+    )
 
 
 @router.get("/customers/{customer_id}", response_model=CustomerAccountOut)

@@ -316,6 +316,15 @@ class TestApi:
         for call in client.get("/dunning/queue").json():
             assert call["account_total"] == {call["currency"]: call["amount_outstanding"]}
 
+    def test_summary_and_customer_list(self, client) -> None:
+        client.post("/dunning/sync")
+        summary = client.get("/dunning/summary").json()
+        assert summary["invoices"] == 2
+        assert summary["outstanding_inr_by_tier"]["high"] == "50000.00"
+        page = client.get("/dunning/customers", params={"sort": "name"}).json()
+        assert [c["customer_id"] for c in page["customers"]] == ["C-H", "C-M"]
+        assert client.get("/dunning/customers", params={"sort": "bad"}).status_code == 422
+
     def test_customer_account(self, client) -> None:
         client.post("/dunning/sync")
         account = client.get("/dunning/customers/C-H").json()
