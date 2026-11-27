@@ -32,24 +32,27 @@ from ab_dashboard.db import (
     _new_id,
     get_sessionmaker,
 )
-from shared.models import CallOutcome, Invoice, RiskTier
+from shared.models import AccountItem, CallOutcome, Invoice, RiskTier
 from shared.observability import metrics as m
 from shared.observability.tracing import tracer
 from voice_agent.dunning_logic import amount_in_inr, classify_risk, priority_score
 from workflow.policy import INTRUSIVE_CHANNELS, Channel, DunningPolicy, TaskType, get_policy
 from workflow.scheduler import Attempt, NextAction, as_utc, next_action
 from workflow.state_machine import (
+    AUTOMATED_STATES,
     DunningState,
     Snapshot,
     TaskSpec,
     Transition,
     TransitionError,
+    on_account_contact,
     on_cadence_exhausted,
     on_call_outcome,
     on_contact,
     on_payment,
     on_promise_due,
     on_task_resolved,
+    promise_covers_account,
     retier,
 )
 
@@ -137,6 +140,52 @@ def effective_invoice(row: InvoiceStateRow, today: date) -> Invoice:
             "amount": Decimal(row.amount_outstanding),
             "promise_to_pay_date": row.promise_to_pay_date,
         }
+    )
+
+
+async def _account_rows(
+    session: AsyncSession,
+    customer_id: str,
+    *,
+    exclude: str,
+    only: list[str] | None = None,
+) -> list[InvoiceStateRow]:
+    """The customer's other invoices in active dunning, in a stable order. These are
+    the ones an account-level contact covers; disputed, promised or escalated invoices
+    are each waiting on something specific and are left out of the conversation."""
+    stmt = (
+        select(InvoiceStateRow)
+        .where(
+            InvoiceStateRow.customer_id == customer_id,
+            InvoiceStateRow.invoice_id != exclude,
+            InvoiceStateRow.state.in_([s.value for s in AUTOMATED_STATES]),
+        )
+        .order_by(InvoiceStateRow.invoice_id)
+    )
+    if only is not None:
+        if not only:
+            return []
+        stmt = stmt.where(InvoiceStateRow.invoice_id.in_(only))
+    return list((await session.execute(stmt)).scalars())
+
+
+def _account_item(row: InvoiceStateRow, policy: DunningPolicy, now: datetime) -> AccountItem:
+    inv = effective_invoice(row, local_today(row, policy, now))
+    return AccountItem(
+        invoice_id=inv.invoice_id,
+        amount=inv.amount,
+        currency=inv.currency,
+        due_date=inv.due_date,
+        days_overdue=inv.days_overdue,
+    )
+
+
+async def _with_account(
+    session: AsyncSession, row: InvoiceStateRow, invoice: Invoice, policy: DunningPolicy, now
+) -> Invoice:
+    others = await _account_rows(session, row.customer_id, exclude=row.invoice_id)
+    return invoice.model_copy(
+        update={"other_open_invoices": [_account_item(r, policy, now) for r in others]}
     )
 
 
@@ -443,6 +492,9 @@ class TickReport:
     retiered: int = 0
     # Contacts not made because a higher-priority invoice of the same customer leads.
     held_for_customer: int = 0
+    # Invoices covered by an email or SMS sent about another invoice of the same
+    # customer: the account got one reminder listing everything it owes.
+    covered_by_account_contact: int = 0
     conflicts: int = 0
 
 
@@ -501,6 +553,19 @@ async def _tick_one(
         channel = planned.channel.value
         _on_commit(session, lambda: m.DUNNING_CONTACTS.labels(channel).inc())
         await _apply(session, row, on_contact(_snapshot(row), planned.channel, now), now)
+        # The reminder is a statement of the account: it lists every invoice the
+        # customer has in dunning, so each of them records the contact.
+        for other in await _account_rows(session, row.customer_id, exclude=row.invoice_id):
+            await _apply(
+                session,
+                other,
+                on_account_contact(
+                    _snapshot(other), planned.channel, now, lead_invoice_id=row.invoice_id
+                ),
+                now,
+            )
+            await _reschedule(session, other, policy, now)
+            report.covered_by_account_contact += 1
         if planned.channel is Channel.EMAIL:
             report.emails_sent += 1
         else:
@@ -566,7 +631,9 @@ async def _tick(now: datetime | None, policy: DunningPolicy | None) -> TickRepor
 
 @dataclass
 class DueCall:
-    invoice: Invoice  # effective: aged and net of payments
+    # Effective (aged, net of payments), carrying the customer's other invoices in
+    # dunning: the call is about the account, filed under this invoice.
+    invoice: Invoice
     tier: RiskTier
     priority: float
     state: str
@@ -574,11 +641,16 @@ class DueCall:
 
 
 async def due_calls(
-    *, now: datetime | None = None, limit: int = 20, policy: DunningPolicy | None = None
+    *,
+    now: datetime | None = None,
+    limit: int = 20,
+    policy: DunningPolicy | None = None,
+    with_account: bool = True,
 ) -> list[DueCall]:
-    """Invoices whose cadence wants a call that is permitted right now, highest priority
-    first. Re-checked against the contact rules at query time: a call that was due at
-    18:55 is not due at 21:00."""
+    """Customers whose cadence wants a call that is permitted right now, highest
+    priority first: one entry per customer, filed under their most urgent invoice and
+    listing the rest of the account. Re-checked against the contact rules at query
+    time: a call that was due at 18:55 is not due at 21:00."""
     now = as_utc(now or datetime.now(UTC))
     policy = policy or get_policy()
     async with get_sessionmaker()() as session:
@@ -595,7 +667,7 @@ async def due_calls(
                 )
             ).scalars()
         )
-        due: list[DueCall] = []
+        due: list[tuple[DueCall, InvoiceStateRow]] = []
         for row in rows:
             planned = _plan(row, await _attempts(session, row.customer_id, now), policy, now)
             if planned is None or planned.channel is not Channel.CALL or planned.at > now:
@@ -603,17 +675,29 @@ async def due_calls(
             today = local_today(row, policy, now)
             invoice = effective_invoice(row, today)
             tier = RiskTier(row.tier)
-            due.append(
-                DueCall(
-                    invoice=invoice.model_copy(update={"risk_tier": tier}),
-                    tier=tier,
-                    priority=priority_score(invoice),
-                    state=row.state,
-                    broken_promises=row.broken_promises,
-                )
+            call = DueCall(
+                invoice=invoice.model_copy(update={"risk_tier": tier}),
+                tier=tier,
+                priority=priority_score(invoice),
+                state=row.state,
+                broken_promises=row.broken_promises,
             )
-    due.sort(key=lambda d: (-d.priority, d.invoice.invoice_id))
-    return due[:limit]
+            due.append((call, row))
+        due.sort(key=lambda d: (-d[0].priority, d[0].invoice.invoice_id))
+
+        # One call per customer, about their most urgent invoice, covering the rest.
+        seen: set[str] = set()
+        calls: list[DueCall] = []
+        for call, row in due:
+            if row.customer_id in seen:
+                continue
+            seen.add(row.customer_id)
+            if with_account:
+                call.invoice = await _with_account(session, row, call.invoice, policy, now)
+            calls.append(call)
+            if len(calls) == limit:
+                break
+    return calls
 
 
 def capture_discrepancy(captured: dict | None, outcome: CallOutcome) -> str | None:
@@ -651,6 +735,66 @@ class OutcomeReport:
     discrepancy: str | None = None
     next_action_channel: str | None = None
     next_action_at: datetime | None = None
+    # The customer's other invoices the call covered, and whether its promise was
+    # applied to all of them (True) or to this invoice only.
+    account_invoices: list[str] = field(default_factory=list)
+    promise_covers_account: bool = False
+
+
+async def _apply_to_account(
+    session: AsyncSession,
+    lead: InvoiceStateRow,
+    outcome: CallOutcome,
+    covered: list[str] | None,
+    *,
+    source_id: str,
+    call_log_id: str | None,
+    policy: DunningPolicy,
+    now: datetime,
+) -> tuple[list[str], bool]:
+    """Carry an account call's result to the other invoices it covered.
+
+    A promise for the whole account puts every covered invoice on that promise (each
+    with its own verify task, so each closes on its own payment). Anything else - a
+    dispute, a partial plan, a refusal, no answer - stays with the lead invoice, and
+    the others only record that the customer was contacted about them.
+    """
+    riders = await _account_rows(session, lead.customer_id, exclude=lead.invoice_id, only=covered)
+    if not riders:
+        return [], False
+    today = local_today(lead, policy, now)
+    totals = effective_invoice(lead, today).model_copy(
+        update={"other_open_invoices": [_account_item(r, policy, now) for r in riders]}
+    ).account_totals()
+    whole = promise_covers_account(outcome, totals)
+    for other in riders:
+        if whole:
+            transition = on_call_outcome(
+                _snapshot(other),
+                outcome,
+                call_id=source_id,
+                policy=policy,
+                now=now,
+                today=local_today(other, policy, now),
+                current_step_channel=None,
+            )
+            # The lead's keys are `<call>:<type>`; one call now opens a task per invoice.
+            transition.tasks = [
+                replace(t, dedupe_key=f"{t.dedupe_key}:{other.invoice_id}")
+                for t in transition.tasks
+            ]
+            transition.detail["lead_invoice"] = lead.invoice_id
+        else:
+            transition = on_account_contact(
+                _snapshot(other),
+                Channel.CALL,
+                now,
+                lead_invoice_id=lead.invoice_id,
+                outcome=outcome.outcome.value,
+            )
+        await _apply(session, other, transition, now, call_log_id=call_log_id)
+        await _reschedule(session, other, policy, now)
+    return [r.invoice_id for r in riders], whole
 
 
 async def record_call_outcome(
@@ -660,6 +804,8 @@ async def record_call_outcome(
     call_log_id: str | None = None,
     captured: dict | None = None,
     invoice: Invoice | None = None,
+    also_covers: list[str] | None = None,
+    cover_account: bool = False,
     now: datetime | None = None,
     policy: DunningPolicy | None = None,
 ) -> OutcomeReport:
@@ -668,11 +814,17 @@ async def record_call_outcome(
     `captured` is what the agent's tools recorded during the call; it is reconciled
     against `outcome` (the post-call extraction) and any disagreement opens a QA task.
     `invoice` lets a call about an invoice not yet synced bring it into the workflow.
+    `also_covers` names the customer's other invoices the call discussed; it defaults
+    to the account the agent was given (`invoice.other_open_invoices`), or with
+    `cover_account` to every invoice the customer has in dunning (a call recorded by
+    hand, where nobody listed the account up front).
     """
     now = as_utc(now or datetime.now(UTC))
     policy = policy or get_policy()
     attempt_id = _new_id()
     source_id = call_log_id or attempt_id
+    if also_covers is None and not cover_account:
+        also_covers = [i.invoice_id for i in invoice.other_open_invoices] if invoice else []
     span = tracer.start_span("dunning.record_call_outcome")
     span.set_attribute("invoice.id", invoice_id)
     span.set_attribute("call.outcome", outcome.outcome.value)
@@ -729,6 +881,16 @@ async def record_call_outcome(
         if row.state != DunningState.CLOSED.value:
             await _retier(session, row, now, today)
         await _reschedule(session, row, policy, now)
+        covered, whole = await _apply_to_account(
+            session,
+            row,
+            outcome,
+            also_covers,
+            source_id=source_id,
+            call_log_id=call_log_id,
+            policy=policy,
+            now=now,
+        )
         return OutcomeReport(
             invoice_id=row.invoice_id,
             state=row.state,
@@ -737,6 +899,8 @@ async def record_call_outcome(
             discrepancy=discrepancy,
             next_action_channel=row.next_action_channel,
             next_action_at=row.next_action_at,
+            account_invoices=covered,
+            promise_covers_account=whole,
         )
 
     try:
@@ -882,12 +1046,68 @@ async def invoice_detail(invoice_id: str, *, now: datetime | None = None) -> Inv
                 )
             ).scalars()
         )
-    return InvoiceDetail(
-        row=row,
-        invoice=effective_invoice(row, local_today(row, policy, now)),
-        tasks=tasks,
-        events=events,
-        attempts=attempts,
+        invoice = await _with_account(
+            session, row, effective_invoice(row, local_today(row, policy, now)), policy, now
+        )
+    return InvoiceDetail(row=row, invoice=invoice, tasks=tasks, events=events, attempts=attempts)
+
+
+@dataclass
+class CustomerAccount:
+    customer_id: str
+    customer_name: str
+    invoices: list[tuple[InvoiceStateRow, Invoice]]  # every invoice, any state
+    # Per currency, over invoices still in active dunning: what a call would ask for.
+    overdue_in_dunning: dict[str, Decimal]
+    # Per currency, over every invoice not yet closed.
+    outstanding: dict[str, Decimal]
+    open_tasks: list[TaskRow]
+
+
+async def customer_account(customer_id: str, *, now: datetime | None = None) -> CustomerAccount:
+    """The customer's whole account: what a collector looks at before calling."""
+    now = as_utc(now or datetime.now(UTC))
+    policy = get_policy()
+    async with get_sessionmaker()() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(InvoiceStateRow)
+                    .where(InvoiceStateRow.customer_id == customer_id)
+                    .order_by(InvoiceStateRow.invoice_id)
+                )
+            ).scalars()
+        )
+        if not rows:
+            raise NotFoundError(f"No customer {customer_id!r} in the dunning workflow")
+        tasks = list(
+            (
+                await session.execute(
+                    select(TaskRow)
+                    .where(
+                        TaskRow.invoice_id.in_([r.invoice_id for r in rows]),
+                        TaskRow.status == "open",
+                    )
+                    .order_by(TaskRow.due_date)
+                )
+            ).scalars()
+        )
+    invoices = [(r, effective_invoice(r, local_today(r, policy, now))) for r in rows]
+    in_dunning: dict[str, Decimal] = {}
+    outstanding: dict[str, Decimal] = {}
+    for r, inv in invoices:
+        if r.state == DunningState.CLOSED.value:
+            continue
+        outstanding[inv.currency] = outstanding.get(inv.currency, Decimal("0")) + inv.amount
+        if DunningState(r.state) in AUTOMATED_STATES:
+            in_dunning[inv.currency] = in_dunning.get(inv.currency, Decimal("0")) + inv.amount
+    return CustomerAccount(
+        customer_id=customer_id,
+        customer_name=rows[0].invoice.get("customer", {}).get("name", ""),
+        invoices=invoices,
+        overdue_in_dunning=in_dunning,
+        outstanding=outstanding,
+        open_tasks=tasks,
     )
 
 
@@ -948,7 +1168,7 @@ async def refresh_metrics(*, now: datetime | None = None) -> None:
     m.DUNNING_OUTSTANDING.clear()
     for tier, total in by_tier.items():
         m.DUNNING_OUTSTANDING.labels(tier).set(float(total))
-    m.DUNNING_CALLS_DUE.set(len(await due_calls(now=now, limit=100_000)))
+    m.DUNNING_CALLS_DUE.set(len(await due_calls(now=now, limit=100_000, with_account=False)))
 
 
 async def has_invoices() -> bool:

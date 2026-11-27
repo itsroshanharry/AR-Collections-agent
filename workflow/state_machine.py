@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from enum import StrEnum
 
 from shared.models import CallOutcome, OutcomeType, RiskTier
@@ -193,6 +194,51 @@ def on_contact(snap: Snapshot, channel: Channel, now: datetime) -> Transition:
         event=f"contact:{channel.value}",
         detail={"step": snap.cadence_step},
     )
+
+
+def on_account_contact(
+    snap: Snapshot,
+    channel: Channel,
+    now: datetime,
+    *,
+    lead_invoice_id: str,
+    outcome: str | None = None,
+) -> Transition:
+    """This invoice was covered by a contact made about another invoice of the same
+    customer (the account's lead).
+
+    The account follows its lead invoice's cadence, so this one's own step does not
+    advance; recording the contact is what stops it sending its own reminder on the
+    heels of the one that just went out.
+    """
+    if not snap.automated:
+        raise TransitionError(f"no automated contact while {snap.state.value}")
+    detail: dict = {"lead_invoice": lead_invoice_id}
+    if outcome:
+        detail["outcome"] = outcome
+    return Transition(
+        snapshot=replace(snap, state=DunningState.IN_DUNNING, last_contact_at=now),
+        event=f"account_contact:{channel.value}",
+        detail=detail,
+    )
+
+
+def promise_covers_account(outcome: CallOutcome, account_totals: dict[str, Decimal]) -> bool:
+    """Does a promise made on an account call commit to the whole account?
+
+    Yes when it is a dated promise with no amount (the agent quoted the account total),
+    or for at least the account total. A smaller amount, a partial-payment plan, or an
+    amount against an account in several currencies applies to the lead invoice only:
+    there is no telling which other invoice it was meant for.
+    """
+    if outcome.outcome is not OutcomeType.PROMISE_TO_PAY or outcome.promise_to_pay_date is None:
+        return False
+    if outcome.promised_amount is None:
+        return True
+    if len(account_totals) != 1:
+        return False
+    [total] = account_totals.values()
+    return outcome.promised_amount >= total
 
 
 def on_cadence_exhausted(snap: Snapshot, policy: DunningPolicy, today: date) -> Transition:

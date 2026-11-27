@@ -74,6 +74,22 @@ def database_url(tmp_path) -> str:
     return postgres
 
 
+@pytest.fixture
+async def db(database_url, monkeypatch):
+    """The app's database module, pointed at a fresh, migrated database."""
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    import ab_dashboard.db as db_module
+    from shared.config import get_settings
+
+    get_settings.cache_clear()
+    db_module._engine = None
+    db_module._sessionmaker = None
+    await db_module.init_db()
+    yield db_module
+    await db_module.dispose_engine()
+    get_settings.cache_clear()
+
+
 _SPAN_EXPORTER = None
 
 
