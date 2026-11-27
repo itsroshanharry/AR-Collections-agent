@@ -146,6 +146,26 @@ class TestMatch:
         )
         assert not r.matched and "duplicate" in r.reason
 
+    def test_reference_quoted_on_a_call_identifies_the_payment(self) -> None:
+        r = match(
+            line("50000", "TRANSFER", payer="A K Sharma", utr="N24781190"),
+            ITEMS,
+            tolerance=TOL,
+            claims={"n2478-1190": "INV-100"},
+        )
+        assert (r.matched, r.rule) == (True, "customer_claim")
+        assert [a.invoice_id for a in r.allocations] == ["INV-100"]
+
+    def test_short_claimed_reference_is_not_trusted(self) -> None:
+        r = match(line("50000", "PAY 123"), ITEMS, tolerance=TOL, claims={"123": "INV-100"})
+        assert not r.matched
+
+    def test_claimed_payment_for_too_much_still_goes_to_a_person(self) -> None:
+        r = match(
+            line("90000", utr="N24781190"), ITEMS, tolerance=TOL, claims={"N24781190": "INV-100"}
+        )
+        assert not r.matched and "overpayment" in r.reason
+
     def test_zero_tolerance_policy_does_not_settle_short_payments(self) -> None:
         [a] = match(line("49975", "INV-100"), ITEMS).allocations
         assert not a.settles

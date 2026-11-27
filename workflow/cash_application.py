@@ -6,6 +6,9 @@ explained after the fact from the rule name and reason stored with it.
 
 The rules, in the order a person doing this by hand would try them:
 
+  0. customer_claim      The customer told the agent on a call that they had paid and
+                         quoted this payment's reference (the UTR). That claim is what
+                         identifies it, so "already paid" is verified with no person.
   1. invoice_reference   The narrative names one open invoice (banks often drop the
                          hyphen: "INV100432" matches INV-100432). Applied up to its
                          balance; a payment within the settlement tolerance settles it.
@@ -23,7 +26,7 @@ for an invoice they paid, and the one they did not pay is marked settled.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 
@@ -130,21 +133,50 @@ def _fmt(amount: Decimal, currency: str) -> str:
     return f"{amount:.2f} {currency}"
 
 
+# A payment reference a customer gave on a call must be at least this long to be
+# matched against a bank line; a short one ("123") would match half the statement.
+MIN_CLAIM_REFERENCE = 6
+
+
+def claimed_invoice(line: BankLine, claims: dict[str, str]) -> str | None:
+    """The invoice a customer said this payment was for, by the reference they quoted
+    on a call ("I paid it, the UTR is N2478..."). `claims` maps reference -> invoice."""
+    haystack = _compact(line.utr) + " " + _compact(line.reference)
+    hits = {
+        invoice_id
+        for ref, invoice_id in claims.items()
+        if len(_compact(ref)) >= MIN_CLAIM_REFERENCE and _compact(ref) in haystack
+    }
+    return hits.pop() if len(hits) == 1 else None
+
+
 def match(
     line: BankLine,
     items: list[OpenItem],
     *,
     tolerance: Decimal = Decimal("0"),
     closed_invoice_ids: frozenset[str] = frozenset(),
+    claims: dict[str, str] | None = None,
 ) -> MatchResult:
     """Decide what one bank line pays. `items` are the open invoices; `closed_invoice_ids`
     lets a payment against an already-settled invoice be flagged as a likely duplicate
-    instead of silently going unmatched."""
+    instead of silently going unmatched. `claims` are payment references customers
+    quoted on calls, which identify a payment whose narrative names no invoice."""
     currency = line.currency.upper()
     if line.amount <= 0:
         return MatchResult(False, "none", "not a credit")
 
     named = referenced_invoices(line.reference, [i.invoice_id for i in items])
+    claimed = claimed_invoice(line, claims or {}) if not named else None
+    if claimed and claimed in {i.invoice_id for i in items}:
+        result = _single(line, next(i for i in items if i.invoice_id == claimed), tolerance)
+        if result.matched:
+            return replace(
+                result,
+                rule="customer_claim",
+                reason=f"reference quoted by the customer on a call about {claimed}",
+            )
+        return result
     if not named:
         closed = referenced_invoices(line.reference, sorted(closed_invoice_ids))
         if closed:
@@ -167,30 +199,7 @@ def match(
                 invoice_ids=tuple(named),
             )
         if len(targets) == 1:
-            [t] = targets
-            # Any excess is the customer's money (a refund or a credit note), so even a
-            # small one goes to a person rather than vanishing into the invoice.
-            if line.amount > t.outstanding:
-                return MatchResult(
-                    False,
-                    "none",
-                    f"overpayment: {_fmt(line.amount, currency)} against a balance of "
-                    f"{_fmt(t.outstanding, currency)} on {t.invoice_id}",
-                    customer_id=customer,
-                    invoice_ids=(t.invoice_id,),
-                )
-            amount = line.amount
-            left = t.outstanding - amount
-            settles = left <= tolerance
-            return MatchResult(
-                True,
-                "invoice_reference",
-                f"narrative names {t.invoice_id}"
-                + ("" if settles else f"; part payment, {_fmt(left, currency)} left"),
-                allocations=(Allocation(t.invoice_id, amount, settles),),
-                customer_id=customer,
-                invoice_ids=(t.invoice_id,),
-            )
+            return _single(line, targets[0], tolerance)
         total = sum((t.outstanding for t in targets), Decimal("0"))
         if abs(line.amount - total) <= tolerance and line.amount <= total:
             return MatchResult(
@@ -254,6 +263,42 @@ def match(
         f"payer recognised, but {_fmt(line.amount, currency)} matches no open invoice "
         f"and not the account total of {_fmt(total, currency)}",
         customer_id=customer,
+    )
+
+
+def _single(line: BankLine, t: OpenItem, tolerance: Decimal) -> MatchResult:
+    """A payment for one known invoice: applied in full, settling it if what is left is
+    within tolerance."""
+    currency = line.currency.upper()
+    if t.currency.upper() != currency:
+        return MatchResult(
+            False,
+            "none",
+            f"paid in {currency}, but {t.invoice_id} is billed in {t.currency.upper()}",
+            customer_id=t.customer_id,
+            invoice_ids=(t.invoice_id,),
+        )
+    # Any excess is the customer's money (a refund or a credit note), so even a small
+    # one goes to a person rather than vanishing into the invoice.
+    if line.amount > t.outstanding:
+        return MatchResult(
+            False,
+            "none",
+            f"overpayment: {_fmt(line.amount, currency)} against a balance of "
+            f"{_fmt(t.outstanding, currency)} on {t.invoice_id}",
+            customer_id=t.customer_id,
+            invoice_ids=(t.invoice_id,),
+        )
+    left = t.outstanding - line.amount
+    settles = left <= tolerance
+    return MatchResult(
+        True,
+        "invoice_reference",
+        f"narrative names {t.invoice_id}"
+        + ("" if settles else f"; part payment, {_fmt(left, currency)} left"),
+        allocations=(Allocation(t.invoice_id, line.amount, settles),),
+        customer_id=t.customer_id,
+        invoice_ids=(t.invoice_id,),
     )
 
 
