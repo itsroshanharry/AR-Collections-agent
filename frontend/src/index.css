@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+/* Semantic colour tokens. Components use bg-surface, text-muted, border-line and so on,
+   never raw palette colours, so light and dark themes come from this one place. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --line: #e3e6eb;
+  --ink: #16191f;
+  --muted: #5d6573;
+  --accent: #0f766e;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6f4f2;
+  --good: #15803d;
+  --good-soft: #e8f5ec;
+  --warn: #b45309;
+  --warn-soft: #fdf3e4;
+  --bad: #b91c1c;
+  --bad-soft: #fcebeb;
+  --info: #1d4ed8;
+  --info-soft: #e9effd;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116;
+    --surface: #161a21;
+    --surface-2: #1d222b;
+    --line: #2a303b;
+    --ink: #e7eaf0;
+    --muted: #9aa3b2;
+    --accent: #2dd4bf;
+    --accent-ink: #062320;
+    --accent-soft: #10302d;
+    --good: #4ade80;
+    --good-soft: #12291b;
+    --warn: #fbbf24;
+    --warn-soft: #2e2410;
+    --bad: #f87171;
+    --bad-soft: #321616;
+    --info: #93b4ff;
+    --info-soft: #172341;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
