@@ -24,6 +24,12 @@ COPY workflow/ ./workflow/
 ENV PYTHONPATH=/app \
     PATH="/app/.venv/bin:$PATH"
 
+# The demo ledger that POST /dunning/sync loads. Generated here rather than copied in:
+# it is not committed, and .dockerignore keeps the licence-restricted Kaggle base data
+# out of the image, so this uses the built-in distributions. Fixed seed: every build
+# produces the same 500 invoices.
+RUN python -m data.generate_dataset
+
 # Render injects $PORT; default for local `docker run`.
 ENV PORT=8000
 EXPOSE 8000

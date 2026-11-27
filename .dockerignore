@@ -1,0 +1,19 @@
+# Secrets never go into an image.
+.env
+.env.local
+
+# The Kaggle base data is licence-restricted and machine-local; the image generates its
+# own ledger from the built-in distributions instead (see infra/Dockerfile.dashboard).
+data/raw/*
+data/synthetic/*
+
+# Local state and build noise.
+.git
+.venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+*.db
+*.sqlite3
+*.log
+artifacts/
