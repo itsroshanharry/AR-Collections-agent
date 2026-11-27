@@ -1,0 +1,3596 @@
+{
+  "components": {
+    "schemas": {
+      "AccountItemOut": {
+        "properties": {
+          "amount_outstanding": {
+            "title": "Amount Outstanding",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "days_overdue": {
+            "title": "Days Overdue",
+            "type": "integer"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "invoice_id": {
+            "title": "Invoice Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount_outstanding",
+          "currency",
+          "due_date",
+          "days_overdue"
+        ],
+        "title": "AccountItemOut",
+        "type": "object"
+      },
+      "AllocationIn": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "invoice_id": {
+            "title": "Invoice Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount"
+        ],
+        "title": "AllocationIn",
+        "type": "object"
+      },
+      "ApplyIn": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationIn"
+            },
+            "minItems": 1,
+            "title": "Allocations",
+            "type": "array"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "allocations"
+        ],
+        "title": "ApplyIn",
+        "type": "object"
+      },
+      "AttemptOut": {
+        "properties": {
+          "attempted_at": {
+            "format": "date-time",
+            "title": "Attempted At",
+            "type": "string"
+          },
+          "call_log_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Log Id"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          }
+        },
+        "required": [
+          "channel",
+          "attempted_at",
+          "outcome",
+          "call_log_id"
+        ],
+        "title": "AttemptOut",
+        "type": "object"
+      },
+      "BankLineIn": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "currency": {
+            "default": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "payer_name": {
+            "default": "",
+            "title": "Payer Name",
+            "type": "string"
+          },
+          "reference": {
+            "default": "",
+            "examples": [
+              "NEFT/INV-100432/ACME"
+            ],
+            "title": "Reference",
+            "type": "string"
+          },
+          "utr": {
+            "examples": [
+              "N24781190042"
+            ],
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Utr",
+            "type": "string"
+          },
+          "value_date": {
+            "format": "date",
+            "title": "Value Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "utr",
+          "value_date",
+          "amount"
+        ],
+        "title": "BankLineIn",
+        "type": "object"
+      },
+      "CustomerAccountOut": {
+        "properties": {
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "invoices": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerInvoiceOut"
+            },
+            "title": "Invoices",
+            "type": "array"
+          },
+          "open_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskOut"
+            },
+            "title": "Open Tasks",
+            "type": "array"
+          },
+          "outstanding": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Outstanding",
+            "type": "object"
+          },
+          "overdue_in_dunning": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Overdue In Dunning",
+            "type": "object"
+          }
+        },
+        "required": [
+          "customer_id",
+          "customer_name",
+          "overdue_in_dunning",
+          "outstanding",
+          "invoices",
+          "open_tasks"
+        ],
+        "title": "CustomerAccountOut",
+        "type": "object"
+      },
+      "CustomerInvoiceOut": {
+        "properties": {
+          "amount_outstanding": {
+            "title": "Amount Outstanding",
+            "type": "string"
+          },
+          "broken_promises": {
+            "title": "Broken Promises",
+            "type": "integer"
+          },
+          "cadence_step": {
+            "title": "Cadence Step",
+            "type": "integer"
+          },
+          "cadence_tier": {
+            "title": "Cadence Tier",
+            "type": "string"
+          },
+          "closed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed Reason"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "days_overdue_today": {
+            "title": "Days Overdue Today",
+            "type": "integer"
+          },
+          "do_not_call": {
+            "title": "Do Not Call",
+            "type": "boolean"
+          },
+          "invoice_id": {
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "last_contact_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Contact At"
+          },
+          "next_action_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action At"
+          },
+          "next_action_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action Channel"
+          },
+          "promise_to_pay_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promise To Pay Date"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "customer_id",
+          "customer_name",
+          "currency",
+          "amount_outstanding",
+          "state",
+          "tier",
+          "cadence_tier",
+          "cadence_step",
+          "next_action_channel",
+          "next_action_at",
+          "last_contact_at",
+          "promise_to_pay_date",
+          "broken_promises",
+          "do_not_call",
+          "closed_reason",
+          "days_overdue_today"
+        ],
+        "title": "CustomerInvoiceOut",
+        "type": "object"
+      },
+      "CustomerPageOut": {
+        "properties": {
+          "customers": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerRowOut"
+            },
+            "title": "Customers",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "customers"
+        ],
+        "title": "CustomerPageOut",
+        "type": "object"
+      },
+      "CustomerRowOut": {
+        "properties": {
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "invoices": {
+            "title": "Invoices",
+            "type": "integer"
+          },
+          "open_invoices": {
+            "title": "Open Invoices",
+            "type": "integer"
+          },
+          "open_tasks": {
+            "title": "Open Tasks",
+            "type": "integer"
+          },
+          "outstanding": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Outstanding",
+            "type": "object"
+          },
+          "outstanding_inr": {
+            "title": "Outstanding Inr",
+            "type": "string"
+          },
+          "overdue_in_dunning": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Overdue In Dunning",
+            "type": "object"
+          },
+          "states": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "States",
+            "type": "object"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          }
+        },
+        "required": [
+          "customer_id",
+          "customer_name",
+          "invoices",
+          "open_invoices",
+          "tier",
+          "overdue_in_dunning",
+          "outstanding",
+          "outstanding_inr",
+          "open_tasks",
+          "states"
+        ],
+        "title": "CustomerRowOut",
+        "type": "object"
+      },
+      "DismissIn": {
+        "properties": {
+          "note": {
+            "examples": [
+              "transfer from our own savings account"
+            ],
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "DismissIn",
+        "type": "object"
+      },
+      "DoNotCallIn": {
+        "properties": {
+          "do_not_call": {
+            "title": "Do Not Call",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "do_not_call"
+        ],
+        "title": "DoNotCallIn",
+        "type": "object"
+      },
+      "DueCallOut": {
+        "properties": {
+          "account_total": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Account Total",
+            "type": "object"
+          },
+          "amount_outstanding": {
+            "title": "Amount Outstanding",
+            "type": "string"
+          },
+          "broken_promises": {
+            "title": "Broken Promises",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "days_overdue": {
+            "title": "Days Overdue",
+            "type": "integer"
+          },
+          "invoice_id": {
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "other_open_invoices": {
+            "items": {
+              "$ref": "#/components/schemas/AccountItemOut"
+            },
+            "title": "Other Open Invoices",
+            "type": "array"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "number"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "customer_id",
+          "customer_name",
+          "tier",
+          "priority",
+          "days_overdue",
+          "amount_outstanding",
+          "currency",
+          "broken_promises",
+          "other_open_invoices",
+          "account_total"
+        ],
+        "title": "DueCallOut",
+        "type": "object"
+      },
+      "EventOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "from_state": {
+            "title": "From State",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "to_state": {
+            "title": "To State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "from_state",
+          "to_state",
+          "tier",
+          "detail",
+          "created_at"
+        ],
+        "title": "EventOut",
+        "type": "object"
+      },
+      "ExperimentIn": {
+        "properties": {
+          "eval_set": {
+            "default": "eval_scenarios.yaml",
+            "title": "Eval Set",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Run only the first N scenarios (for a fast smoke test).",
+            "title": "Limit"
+          },
+          "seed": {
+            "default": 42,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "variant_a_id": {
+            "examples": [
+              "collections_formal_v1"
+            ],
+            "title": "Variant A Id",
+            "type": "string"
+          },
+          "variant_b_id": {
+            "examples": [
+              "collections_friendly_v2"
+            ],
+            "title": "Variant B Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant_a_id",
+          "variant_b_id"
+        ],
+        "title": "ExperimentIn",
+        "type": "object"
+      },
+      "ExperimentOut": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "completed_count": {
+            "title": "Completed Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "eval_set": {
+            "title": "Eval Set",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "scenario_count": {
+            "title": "Scenario Count",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "variant_a_id": {
+            "title": "Variant A Id",
+            "type": "string"
+          },
+          "variant_b_id": {
+            "title": "Variant B Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "variant_a_id",
+          "variant_b_id",
+          "eval_set",
+          "scenario_count",
+          "completed_count",
+          "error",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "ExperimentOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IngestOut": {
+        "properties": {
+          "auto_match_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Match Rate"
+          },
+          "duplicates": {
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "invoices_part_paid": {
+            "title": "Invoices Part Paid",
+            "type": "integer"
+          },
+          "invoices_settled": {
+            "title": "Invoices Settled",
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LineResultOut"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          },
+          "unmatched": {
+            "title": "Unmatched",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "received",
+          "matched",
+          "unmatched",
+          "duplicates",
+          "invoices_settled",
+          "invoices_part_paid",
+          "auto_match_rate",
+          "lines"
+        ],
+        "title": "IngestOut",
+        "type": "object"
+      },
+      "InvoiceDetailOut": {
+        "properties": {
+          "contact_attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AttemptOut"
+            },
+            "title": "Contact Attempts",
+            "type": "array"
+          },
+          "days_overdue_today": {
+            "title": "Days Overdue Today",
+            "type": "integer"
+          },
+          "other_open_invoices": {
+            "items": {
+              "$ref": "#/components/schemas/AccountItemOut"
+            },
+            "title": "Other Open Invoices",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/InvoiceStateOut"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskOut"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/EventOut"
+            },
+            "title": "Timeline",
+            "type": "array"
+          }
+        },
+        "required": [
+          "state",
+          "days_overdue_today",
+          "other_open_invoices",
+          "tasks",
+          "contact_attempts",
+          "timeline"
+        ],
+        "title": "InvoiceDetailOut",
+        "type": "object"
+      },
+      "InvoiceStateOut": {
+        "properties": {
+          "amount_outstanding": {
+            "title": "Amount Outstanding",
+            "type": "string"
+          },
+          "broken_promises": {
+            "title": "Broken Promises",
+            "type": "integer"
+          },
+          "cadence_step": {
+            "title": "Cadence Step",
+            "type": "integer"
+          },
+          "cadence_tier": {
+            "title": "Cadence Tier",
+            "type": "string"
+          },
+          "closed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed Reason"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "do_not_call": {
+            "title": "Do Not Call",
+            "type": "boolean"
+          },
+          "invoice_id": {
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "last_contact_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Contact At"
+          },
+          "next_action_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action At"
+          },
+          "next_action_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action Channel"
+          },
+          "promise_to_pay_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promise To Pay Date"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "customer_id",
+          "customer_name",
+          "currency",
+          "amount_outstanding",
+          "state",
+          "tier",
+          "cadence_tier",
+          "cadence_step",
+          "next_action_channel",
+          "next_action_at",
+          "last_contact_at",
+          "promise_to_pay_date",
+          "broken_promises",
+          "do_not_call",
+          "closed_reason"
+        ],
+        "title": "InvoiceStateOut",
+        "type": "object"
+      },
+      "LineResultOut": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Allocations",
+            "type": "array"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rule": {
+            "title": "Rule",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          },
+          "utr": {
+            "title": "Utr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "utr",
+          "status",
+          "rule",
+          "reason",
+          "amount",
+          "currency",
+          "customer_id",
+          "allocations",
+          "transaction_id"
+        ],
+        "title": "LineResultOut",
+        "type": "object"
+      },
+      "OutcomeIn": {
+        "description": "A call outcome recorded by hand (a person's call, or a demo without audio).",
+        "properties": {
+          "covers_account": {
+            "default": false,
+            "title": "Covers Account",
+            "type": "boolean"
+          },
+          "dispute_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispute Reason"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/OutcomeType"
+          },
+          "payment_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Reference"
+          },
+          "promise_to_pay_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promise To Pay Date"
+          },
+          "promised_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promised Amount"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "OutcomeIn",
+        "type": "object"
+      },
+      "OutcomeOut": {
+        "properties": {
+          "account_invoices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Account Invoices",
+            "type": "array"
+          },
+          "discrepancy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discrepancy"
+          },
+          "invoice_id": {
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "next_action_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action At"
+          },
+          "next_action_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action Channel"
+          },
+          "payment_verified_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Verified By"
+          },
+          "promise_covers_account": {
+            "title": "Promise Covers Account",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tasks_opened": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tasks Opened",
+            "type": "array"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "state",
+          "tier",
+          "tasks_opened",
+          "discrepancy",
+          "next_action_channel",
+          "next_action_at",
+          "account_invoices",
+          "promise_covers_account",
+          "payment_verified_by"
+        ],
+        "title": "OutcomeOut",
+        "type": "object"
+      },
+      "OutcomeType": {
+        "enum": [
+          "promise_to_pay",
+          "dispute_raised",
+          "already_paid",
+          "partial_payment",
+          "refused",
+          "no_answer",
+          "unclear"
+        ],
+        "title": "OutcomeType",
+        "type": "string"
+      },
+      "PaymentIn": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "reference": {
+            "default": "",
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ],
+        "title": "PaymentIn",
+        "type": "object"
+      },
+      "PromptIn": {
+        "properties": {
+          "applies_to_tier": {
+            "items": {
+              "$ref": "#/components/schemas/RiskTier"
+            },
+            "title": "Applies To Tier",
+            "type": "array"
+          },
+          "changelog": {
+            "default": "",
+            "title": "Changelog",
+            "type": "string"
+          },
+          "id": {
+            "examples": [
+              "collections_formal_v1"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "examples": [
+              "collections_agent"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "template": {
+            "title": "Template",
+            "type": "string"
+          },
+          "tone": {
+            "$ref": "#/components/schemas/Tone"
+          },
+          "version": {
+            "examples": [
+              1
+            ],
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "tone",
+          "template"
+        ],
+        "title": "PromptIn",
+        "type": "object"
+      },
+      "PromptOut": {
+        "properties": {
+          "applies_to_tier": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Applies To Tier",
+            "type": "array"
+          },
+          "changelog": {
+            "title": "Changelog",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "template": {
+            "title": "Template",
+            "type": "string"
+          },
+          "tone": {
+            "title": "Tone",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "tone",
+          "template",
+          "changelog",
+          "applies_to_tier"
+        ],
+        "title": "PromptOut",
+        "type": "object"
+      },
+      "ResultsOut": {
+        "properties": {
+          "adversarial_held_a": {
+            "title": "Adversarial Held A",
+            "type": "integer"
+          },
+          "adversarial_held_b": {
+            "title": "Adversarial Held B",
+            "type": "integer"
+          },
+          "by_tag": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TagBreakdownOut"
+            },
+            "description": "Per-capability breakdown: where a variant wins or fails, not just whether",
+            "title": "By Tag",
+            "type": "object"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "per_scenario": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioResultOut"
+            },
+            "title": "Per Scenario",
+            "type": "array"
+          },
+          "scenario_count": {
+            "title": "Scenario Count",
+            "type": "integer"
+          },
+          "significance": {
+            "$ref": "#/components/schemas/SignificanceOut"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "ties": {
+            "title": "Ties",
+            "type": "integer"
+          },
+          "variant_a": {
+            "$ref": "#/components/schemas/VariantSummaryOut"
+          },
+          "variant_b": {
+            "$ref": "#/components/schemas/VariantSummaryOut"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "status",
+          "scenario_count",
+          "ties",
+          "variant_a",
+          "variant_b",
+          "adversarial_held_a",
+          "adversarial_held_b",
+          "significance",
+          "by_tag",
+          "verdict",
+          "per_scenario"
+        ],
+        "title": "ResultsOut",
+        "type": "object"
+      },
+      "RiskTier": {
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ],
+        "title": "RiskTier",
+        "type": "string"
+      },
+      "ScenarioResultOut": {
+        "properties": {
+          "a_composite": {
+            "title": "A Composite",
+            "type": "number"
+          },
+          "a_hallucinated": {
+            "title": "A Hallucinated",
+            "type": "boolean"
+          },
+          "a_latency_ms": {
+            "title": "A Latency Ms",
+            "type": "number"
+          },
+          "a_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "A Outcome"
+          },
+          "b_composite": {
+            "title": "B Composite",
+            "type": "number"
+          },
+          "b_hallucinated": {
+            "title": "B Hallucinated",
+            "type": "boolean"
+          },
+          "b_latency_ms": {
+            "title": "B Latency Ms",
+            "type": "number"
+          },
+          "b_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "B Outcome"
+          },
+          "expected_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Outcome"
+          },
+          "is_adversarial": {
+            "title": "Is Adversarial",
+            "type": "boolean"
+          },
+          "pairwise_winner": {
+            "title": "Pairwise Winner",
+            "type": "string"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "is_adversarial",
+          "expected_outcome",
+          "pairwise_winner",
+          "a_composite",
+          "b_composite",
+          "a_outcome",
+          "b_outcome",
+          "a_hallucinated",
+          "b_hallucinated",
+          "a_latency_ms",
+          "b_latency_ms"
+        ],
+        "title": "ScenarioResultOut",
+        "type": "object"
+      },
+      "SignificanceOut": {
+        "description": "Whether the A/B difference is distinguishable from noise. See shared/eval/stats.py.",
+        "properties": {
+          "composite_diff": {
+            "description": "Mean composite A minus B, paired by scenario",
+            "title": "Composite Diff",
+            "type": "number"
+          },
+          "composite_diff_ci": {
+            "description": "95% paired bootstrap interval",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Composite Diff Ci",
+            "type": "array"
+          },
+          "decisive": {
+            "description": "Scenarios with a winner (ties excluded from the test)",
+            "title": "Decisive",
+            "type": "integer"
+          },
+          "interpretation": {
+            "title": "Interpretation",
+            "type": "string"
+          },
+          "p_value": {
+            "description": "Exact two-sided sign test on head-to-head wins",
+            "title": "P Value",
+            "type": "number"
+          },
+          "significant": {
+            "description": "p < 0.05",
+            "title": "Significant",
+            "type": "boolean"
+          },
+          "ties": {
+            "title": "Ties",
+            "type": "integer"
+          },
+          "win_rate_ci_a": {
+            "description": "95% Wilson interval",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Win Rate Ci A",
+            "type": "array"
+          },
+          "win_rate_ci_b": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Win Rate Ci B",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decisive",
+          "ties",
+          "p_value",
+          "significant",
+          "win_rate_ci_a",
+          "win_rate_ci_b",
+          "composite_diff",
+          "composite_diff_ci",
+          "interpretation"
+        ],
+        "title": "SignificanceOut",
+        "type": "object"
+      },
+      "SummaryOut": {
+        "properties": {
+          "auto_match_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Match Rate"
+          },
+          "bank_transactions_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Bank Transactions By Status",
+            "type": "object"
+          },
+          "customers_with_calls_due": {
+            "title": "Customers With Calls Due",
+            "type": "integer"
+          },
+          "invoices": {
+            "title": "Invoices",
+            "type": "integer"
+          },
+          "invoices_by_state": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Invoices By State",
+            "type": "object"
+          },
+          "invoices_by_tier": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Invoices By Tier",
+            "type": "object"
+          },
+          "open_tasks_by_team": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Open Tasks By Team",
+            "type": "object"
+          },
+          "outstanding_inr_by_tier": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Outstanding Inr By Tier",
+            "type": "object"
+          },
+          "overdue_tasks_by_team": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Overdue Tasks By Team",
+            "type": "object"
+          }
+        },
+        "required": [
+          "invoices",
+          "invoices_by_state",
+          "invoices_by_tier",
+          "outstanding_inr_by_tier",
+          "customers_with_calls_due",
+          "open_tasks_by_team",
+          "overdue_tasks_by_team",
+          "bank_transactions_by_status",
+          "auto_match_rate"
+        ],
+        "title": "SummaryOut",
+        "type": "object"
+      },
+      "SyncReport": {
+        "properties": {
+          "already_present": {
+            "default": 0,
+            "title": "Already Present",
+            "type": "integer"
+          },
+          "created": {
+            "default": 0,
+            "title": "Created",
+            "type": "integer"
+          },
+          "disputed_on_arrival": {
+            "default": 0,
+            "title": "Disputed On Arrival",
+            "type": "integer"
+          }
+        },
+        "title": "SyncReport",
+        "type": "object"
+      },
+      "SyncResult": {
+        "properties": {
+          "imported": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Imported",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "imported",
+          "updated",
+          "skipped"
+        ],
+        "title": "SyncResult",
+        "type": "object"
+      },
+      "TagBreakdownOut": {
+        "description": "How each variant did on the scenarios carrying one tag.",
+        "properties": {
+          "a_outcome_accuracy": {
+            "title": "A Outcome Accuracy",
+            "type": "number"
+          },
+          "a_wins": {
+            "title": "A Wins",
+            "type": "integer"
+          },
+          "b_outcome_accuracy": {
+            "title": "B Outcome Accuracy",
+            "type": "number"
+          },
+          "b_wins": {
+            "title": "B Wins",
+            "type": "integer"
+          },
+          "scenarios": {
+            "title": "Scenarios",
+            "type": "integer"
+          },
+          "ties": {
+            "title": "Ties",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scenarios",
+          "a_wins",
+          "b_wins",
+          "ties",
+          "a_outcome_accuracy",
+          "b_outcome_accuracy"
+        ],
+        "title": "TagBreakdownOut",
+        "type": "object"
+      },
+      "TaskOut": {
+        "properties": {
+          "allowed_resolutions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Resolutions",
+            "type": "array"
+          },
+          "assignee": {
+            "title": "Assignee",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "invoice_id": {
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "resolution_note": {
+            "title": "Resolution Note",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "invoice_id",
+          "task_type",
+          "title",
+          "assignee",
+          "status",
+          "due_date",
+          "payload",
+          "resolution",
+          "resolution_note",
+          "allowed_resolutions",
+          "created_at",
+          "resolved_at"
+        ],
+        "title": "TaskOut",
+        "type": "object"
+      },
+      "TaskResolveIn": {
+        "properties": {
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "resolution": {
+            "examples": [
+              "received"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution"
+        ],
+        "title": "TaskResolveIn",
+        "type": "object"
+      },
+      "TaskType": {
+        "enum": [
+          "verify_payment",
+          "review_dispute",
+          "reconcile_payment",
+          "escalation_review",
+          "review_call"
+        ],
+        "title": "TaskType",
+        "type": "string"
+      },
+      "TickReport": {
+        "properties": {
+          "calls_due": {
+            "default": 0,
+            "title": "Calls Due",
+            "type": "integer"
+          },
+          "conflicts": {
+            "default": 0,
+            "title": "Conflicts",
+            "type": "integer"
+          },
+          "covered_by_account_contact": {
+            "default": 0,
+            "title": "Covered By Account Contact",
+            "type": "integer"
+          },
+          "emails_sent": {
+            "default": 0,
+            "title": "Emails Sent",
+            "type": "integer"
+          },
+          "escalated": {
+            "default": 0,
+            "title": "Escalated",
+            "type": "integer"
+          },
+          "examined": {
+            "default": 0,
+            "title": "Examined",
+            "type": "integer"
+          },
+          "held_for_customer": {
+            "default": 0,
+            "title": "Held For Customer",
+            "type": "integer"
+          },
+          "promises_broken": {
+            "default": 0,
+            "title": "Promises Broken",
+            "type": "integer"
+          },
+          "retiered": {
+            "default": 0,
+            "title": "Retiered",
+            "type": "integer"
+          },
+          "sms_sent": {
+            "default": 0,
+            "title": "Sms Sent",
+            "type": "integer"
+          }
+        },
+        "title": "TickReport",
+        "type": "object"
+      },
+      "Tone": {
+        "enum": [
+          "gentle",
+          "neutral",
+          "firm",
+          "escalation"
+        ],
+        "title": "Tone",
+        "type": "string"
+      },
+      "TransactionOut": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Allocations",
+            "type": "array"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "match_rule": {
+            "title": "Match Rule",
+            "type": "string"
+          },
+          "payer_name": {
+            "title": "Payer Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "reference": {
+            "title": "Reference",
+            "type": "string"
+          },
+          "resolution_note": {
+            "title": "Resolution Note",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "utr": {
+            "title": "Utr",
+            "type": "string"
+          },
+          "value_date": {
+            "format": "date",
+            "title": "Value Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "utr",
+          "value_date",
+          "amount",
+          "currency",
+          "reference",
+          "payer_name",
+          "source",
+          "status",
+          "match_rule",
+          "reason",
+          "customer_id",
+          "allocations",
+          "resolution_note",
+          "received_at",
+          "resolved_at"
+        ],
+        "title": "TransactionOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VariantSummaryOut": {
+        "properties": {
+          "compliance_failures": {
+            "title": "Compliance Failures",
+            "type": "integer"
+          },
+          "dimension_means": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Dimension Means",
+            "type": "object"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "hallucination_rate": {
+            "title": "Hallucination Rate",
+            "type": "number"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mean_composite": {
+            "title": "Mean Composite",
+            "type": "number"
+          },
+          "mean_latency_ms": {
+            "title": "Mean Latency Ms",
+            "type": "number"
+          },
+          "outcome_accuracy": {
+            "title": "Outcome Accuracy",
+            "type": "number"
+          },
+          "p95_latency_ms": {
+            "title": "P95 Latency Ms",
+            "type": "number"
+          },
+          "promise_date_accuracy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promise Date Accuracy"
+          },
+          "prompt_id": {
+            "title": "Prompt Id",
+            "type": "string"
+          },
+          "win_rate": {
+            "title": "Win Rate",
+            "type": "number"
+          },
+          "wins": {
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_id",
+          "label",
+          "wins",
+          "win_rate",
+          "mean_composite",
+          "mean_latency_ms",
+          "p95_latency_ms",
+          "hallucination_rate",
+          "outcome_accuracy",
+          "promise_date_accuracy",
+          "compliance_failures",
+          "errors",
+          "dimension_means"
+        ],
+        "title": "VariantSummaryOut",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Prompt A/B testing dashboard.\n\nRun it:\n    uv run uvicorn ab_dashboard.main:app --reload\n\nThen drive the whole thing from http://127.0.0.1:8000/docs - no frontend required:\n    1. POST /prompts/sync          import the voice agent's own prompt YAMLs\n    2. POST /experiments           {\"variant_a_id\": \"...\", \"variant_b_id\": \"...\"}\n    3. GET  /experiments/{id}      poll until status is \"completed\"\n    4. GET  /experiments/{id}/results   (partial results are readable while it runs)\n",
+    "title": "Prompt A/B Testing Dashboard",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/cash/simulate": {
+      "post": {
+        "description": "Generate and ingest a day of realistic credits from the open invoices: clean\npayments, a part payment, bank charges, an account payment, and a few that no rule\ncan match. The demo stand-in for a real bank feed.",
+        "operationId": "simulate_cash_simulate_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "count",
+            "required": false,
+            "schema": {
+              "default": 8,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Count",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seed",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Seed"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate",
+        "tags": [
+          "cash application"
+        ]
+      }
+    },
+    "/cash/statement": {
+      "post": {
+        "description": "Import a bank statement CSV (body: text/csv). Columns: value_date, amount,\ncurrency, reference, payer_name, utr. Debits are skipped.",
+        "operationId": "upload_statement_cash_statement_post",
+        "requestBody": {
+          "content": {
+            "text/csv": {
+              "example": "value_date,amount,currency,reference,payer_name,utr\n2026-11-24,50000.00,INR,NEFT/INV-100432/ACME,ACME PVT LTD,N2478119\n",
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Upload Statement",
+        "tags": [
+          "cash application"
+        ]
+      }
+    },
+    "/cash/transactions": {
+      "get": {
+        "description": "Received credits, newest first. status=unmatched is the exceptions queue.",
+        "operationId": "list_transactions_cash_transactions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "examples": [
+                "unmatched"
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "customer_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionOut"
+                  },
+                  "title": "Response List Transactions Cash Transactions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Transactions",
+        "tags": [
+          "cash application"
+        ]
+      },
+      "post": {
+        "description": "Receive credits from a bank feed. Each is matched and applied, or queued as an\nexception. Idempotent on utr: replaying the feed applies nothing twice.",
+        "operationId": "receive_cash_transactions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/BankLineIn"
+                },
+                "title": "Lines",
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive",
+        "tags": [
+          "cash application"
+        ]
+      }
+    },
+    "/cash/transactions/{txn_id}/apply": {
+      "post": {
+        "description": "Apply an unmatched credit to the invoices a person decided it pays.",
+        "operationId": "apply_cash_transactions__txn_id__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "txn_id",
+            "required": true,
+            "schema": {
+              "title": "Txn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply",
+        "tags": [
+          "cash application"
+        ]
+      }
+    },
+    "/cash/transactions/{txn_id}/dismiss": {
+      "post": {
+        "description": "Mark an unmatched credit as not a customer payment, with the reason.",
+        "operationId": "dismiss_cash_transactions__txn_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "txn_id",
+            "required": true,
+            "schema": {
+              "title": "Txn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss",
+        "tags": [
+          "cash application"
+        ]
+      }
+    },
+    "/dunning/customers": {
+      "get": {
+        "description": "Customers with their balances and worst open risk tier, largest exposure first.",
+        "operationId": "list_customers_dunning_customers_get",
+        "parameters": [
+          {
+            "description": "Search name or customer id",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search name or customer id",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "examples": [
+                "high"
+              ],
+              "title": "Tier"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_open_tasks",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Open Tasks"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "outstanding",
+              "enum": [
+                "outstanding",
+                "name",
+                "tier"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Customers",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/customers/{customer_id}": {
+      "get": {
+        "description": "The customer's whole account: every invoice, the balance in dunning, open work.",
+        "operationId": "get_customer_dunning_customers__customer_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Customer",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/invoices/{invoice_id}": {
+      "get": {
+        "description": "Current state, open and closed tasks, every contact, and the full audit trail.",
+        "operationId": "get_invoice_dunning_invoices__invoice_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Invoice",
+        "tags": [
+          "dunning"
+        ]
+      },
+      "patch": {
+        "description": "Set or clear do-not-call. Calls and SMS in the cadence then go out as email.",
+        "operationId": "update_invoice_dunning_invoices__invoice_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DoNotCallIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Invoice",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/invoices/{invoice_id}/outcomes": {
+      "post": {
+        "description": "Record a call outcome by hand. The voice agent records its own automatically.",
+        "operationId": "record_outcome_dunning_invoices__invoice_id__outcomes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutcomeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutcomeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Outcome",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/invoices/{invoice_id}/payments": {
+      "post": {
+        "description": "Apply a payment. Stands in for the ERP or bank feed a real deployment would use.",
+        "operationId": "record_payment_dunning_invoices__invoice_id__payments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Payment",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/queue": {
+      "get": {
+        "description": "Calls the playbook wants right now and the contact rules permit, by priority.\nOne per customer, filed under their most urgent invoice and covering the rest.",
+        "operationId": "call_queue_dunning_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DueCallOut"
+                  },
+                  "title": "Response Call Queue Dunning Queue Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Call Queue",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/summary": {
+      "get": {
+        "description": "The overview in one call: the book by state and tier, calls due, each team's\nqueue and SLA breaches, and how cash application is doing.",
+        "operationId": "get_summary_dunning_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Summary",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/sync": {
+      "post": {
+        "description": "Load the ledger (the generated AR dataset) into the workflow. Idempotent.",
+        "operationId": "sync_dunning_sync_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/dunning/tick": {
+      "post": {
+        "description": "Run one scheduler pass now. The app also runs this on a timer.",
+        "operationId": "tick_dunning_tick_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TickReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tick",
+        "tags": [
+          "dunning"
+        ]
+      }
+    },
+    "/experiments": {
+      "get": {
+        "operationId": "list_experiments_experiments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExperimentOut"
+                  },
+                  "title": "Response List Experiments Experiments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Experiments",
+        "tags": [
+          "experiments"
+        ]
+      },
+      "post": {
+        "description": "Launch an A-vs-B run over the eval set. Returns immediately; poll for status.\n\nThe run is durable: results are saved per scenario as they finish, and if the\nprocess restarts mid-run, the run resumes from the last stored scenario.",
+        "operationId": "create_experiment_experiments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Experiment",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}": {
+      "get": {
+        "operationId": "get_experiment_experiments__experiment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Experiment",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/results": {
+      "get": {
+        "description": "Aggregate an experiment from its persisted rows.\n\nRecomputed from stored results rather than cached at write time, so the headline\nnumbers can always be reconciled against the individual transcripts. Results are\nstored per scenario as they finish, so this also works on a run still in progress;\ncheck `status` before treating the numbers as final.",
+        "operationId": "experiment_results_experiments__experiment_id__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Experiment Results",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Liveness: the process is up and serving. Cheap; touches nothing.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "description": "Readiness: database reachable, schema at head, scheduler alive. 503 if not.",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ready Health Ready Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/prompts": {
+      "get": {
+        "operationId": "list_prompts_prompts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PromptOut"
+                  },
+                  "title": "Response List Prompts Prompts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Prompts",
+        "tags": [
+          "prompts"
+        ]
+      },
+      "post": {
+        "description": "Register (or update) a prompt version.",
+        "operationId": "register_prompt_prompts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Prompt",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/prompts/sync": {
+      "post": {
+        "description": "Import the voice agent's own prompt YAMLs.\n\nThis is what makes an experiment meaningful: the dashboard tests the exact prompts\nthe agent runs in production, loaded through the same validator, rather than a\nre-typed copy that can silently drift.",
+        "operationId": "sync_from_disk_prompts_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sync From Disk",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/prompts/{prompt_id}": {
+      "get": {
+        "operationId": "get_prompt_prompts__prompt_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prompt_id",
+            "required": true,
+            "schema": {
+              "title": "Prompt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Prompt",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/prompts/{prompt_id}/history": {
+      "get": {
+        "description": "Every version sharing this prompt's lineage name, oldest first.",
+        "operationId": "prompt_history_prompts__prompt_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prompt_id",
+            "required": true,
+            "schema": {
+              "title": "Prompt Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PromptOut"
+                  },
+                  "title": "Response Prompt History Prompts  Prompt Id  History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prompt History",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/tasks": {
+      "get": {
+        "description": "A team's work queue, soonest due first. Pass status= (empty) for all statuses.",
+        "operationId": "list_tasks_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "assignee",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "examples": [
+                "disputes"
+              ],
+              "title": "Assignee"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "open",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "invoice_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Invoice Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaskOut"
+                  },
+                  "title": "Response List Tasks Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Tasks",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/tasks/{task_id}": {
+      "patch": {
+        "description": "Resolve a task. The resolution moves the invoice on; see allowed_resolutions.",
+        "operationId": "resolve_task_tasks__task_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskResolveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    }
+  }
+}

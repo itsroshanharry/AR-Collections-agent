@@ -175,6 +175,8 @@ class OutcomeOut(BaseModel):
     next_action_at: datetime | None
     account_invoices: list[str]
     promise_covers_account: bool
+    # "Already paid", and the bank credit that verified it was found and applied.
+    payment_verified_by: str | None
 
 
 class PaymentIn(BaseModel):

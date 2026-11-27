@@ -63,3 +63,15 @@ def test_api_routes_are_not_shadowed(client) -> None:
     c, dist = client
     build(dist)
     assert c.get("/health").json()["status"] == "ok"
+
+
+def test_committed_openapi_schema_is_current() -> None:
+    """The frontend's types are generated from frontend/openapi.json. If an endpoint
+    changes without regenerating it, the console is type-checked against an API that
+    no longer exists."""
+    from ab_dashboard.export_openapi import DEFAULT_PATH, schema_text
+
+    assert DEFAULT_PATH.read_text(encoding="utf-8") == schema_text(), (
+        "frontend/openapi.json is stale: run `uv run python -m ab_dashboard.export_openapi` "
+        "then `npm run gen:api` in frontend/"
+    )
