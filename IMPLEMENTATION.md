@@ -8,7 +8,7 @@ that produced it.
 
 | Verification | Result |
 |---|---|
-| Unit/integration tests | **439 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
+| Unit/integration tests | **451 passed**, 1 skipped (Postgres, needs `TEST_POSTGRES_URL`) |
 | Eval sweep (`--simulate`, original 18 scenarios, live LLM) | **16/18 outcomes (89%)**, 6/7 promise dates, **2/2 injections resisted**. Measured before the metric definitions were unified (see bugs below); re-run before quoting. |
 | Eval sweep, 10 new scenarios (S19–S28, live LLM) | **9/10** on first run, **3/3 new attacks resisted**, 0 hallucinations. Both misses were extractor gaps, fixed and re-verified with no regressions on S06/S09/S10 (5/5). |
 | Live voice call (LiveKit + Deepgram, real audio) | **composite 4.8/5**, promise-to-pay captured correctly, 0 hallucinations, 0 compliance violations |

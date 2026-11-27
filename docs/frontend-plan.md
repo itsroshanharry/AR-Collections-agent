@@ -23,7 +23,7 @@ Everything it shows already exists in the API. The frontend adds no business log
 | Data fetching | **TanStack Query** | Caching, refetch after writes, and polling for experiment progress with little code. |
 | API client | **Generated from FastAPI's OpenAPI schema** (`openapi-typescript`) | The client's types come from the backend, so a changed response shape fails the frontend build instead of failing in a demo. |
 | Styling | **Tailwind CSS** | No design system to maintain; consistent spacing and colour from utility classes. |
-| Charts | **Recharts**, on the overview page only | Enough for a handful of bar and line charts. |
+| Charts | **None**: proportion bars in CSS | The overview needs a few bars, not a chart library (~100 KB saved). |
 | Routes | UI under `/app/...`, `/` redirects there | Keeps client routes clear of the API's `/dunning`, `/cash`, `/tasks` and `/experiments` paths. |
 | Build | A Node stage in `infra/Dockerfile.dashboard` builds `frontend/dist`; the Python stage copies it in | The image stays a single service; Node is not in the runtime image. |
 
@@ -93,7 +93,7 @@ Planned as its own milestone before the public deploy (README roadmap). The fron
 
 | Phase | Scope | Rough size |
 |---|---|---|
-| 1 | Scaffold (Vite, Tailwind, generated client, routing), static serving, `GET /dunning/summary`, `GET /dunning/customers`, Docker build stage. Pages: Overview, Call queue, Customer account, Invoice, Work queues, Cash application. | 2 to 3 days |
+| 1 ✅ | Scaffold (Vite, Tailwind, generated client, routing), static serving, `GET /dunning/summary`, `GET /dunning/customers`, Docker build stage. Pages: Overview, Call queue, Customers, Customer account, Invoice, Work queues, Cash application. Recharts was dropped: CSS bars cover the overview, and Recharts 2 is no longer maintained. | done |
 | 2 | Experiments pages: prompt list, start a run, live progress, results. | 1 day |
 | 3 | Authentication (backend keys and roles, frontend sign-in and role switcher), demo reset, CORS allow-list. | 1 day |
 | 4 | Deploy to Render with Neon; Playwright smoke test in CI. | half a day |

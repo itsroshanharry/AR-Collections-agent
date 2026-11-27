@@ -115,13 +115,29 @@ cp .env.example .env        # add GROQ_API_KEY (free, no card: console.groq.com/
 uv run python -m data.generate_dataset --rows 500 --seed 42
 ```
 
+### The operator console
+
+```bash
+cd frontend && npm ci && npm run build && cd ..
+uv run uvicorn ab_dashboard.main:app --reload     # then open http://127.0.0.1:8000/
+```
+
+A React + TypeScript console served by the API itself at `/app`: the overview of the book, the
+per-customer call queue, customer accounts, invoice timelines, team work queues and cash
+application. Click **Load ledger**, then **Run scheduler pass** and **Simulate bank feed**. For
+frontend development, `npm run dev` serves it on :5173 with API calls proxied to :8000. Its types
+are generated from the API's OpenAPI schema (`uv run python -m ab_dashboard.export_openapi`, then
+`npm run gen:api`), and CI fails if the two drift apart.
+
+Everything below can also be driven from <http://127.0.0.1:8000/docs>.
+
 ### 1. The A/B dashboard
 
 ```bash
 uv run uvicorn ab_dashboard.main:app --reload
 ```
 
-Drive it entirely from <http://127.0.0.1:8000/docs> — no frontend needed:
+Drive it from <http://127.0.0.1:8000/docs> (the console's experiment pages are next):
 
 | Step | Call |
 |---|---|
@@ -242,8 +258,9 @@ voice_agent/       risk tiering, prompts/, LiveKit agent, simulator, extractor, 
 workflow/          dunning policy YAML, contact scheduler, state machine, workflow service,
                    cash application (matcher, service, simulated bank feed)
 ab_dashboard/      FastAPI app, models + Alembic migrations, experiment runner, durable jobs, routers
+frontend/          operator console: React + TypeScript + Vite, typed client generated from OpenAPI
 infra/             Dockerfile, Render blueprint, Kokoro TTS, monitoring stack (Prometheus, Grafana, Jaeger)
-tests/             440 tests, no network calls
+tests/             452 tests, no network calls
 ```
 
 ## Data provenance
@@ -302,7 +319,7 @@ uv run python -m voice_agent.agent --simulate \
 ## Tests
 
 ```bash
-uv run pytest                    # 440 tests, fully mocked, no API calls
+uv run pytest                    # 452 tests, fully mocked, no API calls
 uv run ruff check .
 ```
 
@@ -335,8 +352,8 @@ provider-side model drift. Both live runs need a `GROQ_API_KEY` repository secre
    plugin. `voice_factory.py` is structured to take it as a third branch.
 2. **Streaming.** Time-to-first-token per turn in the simulator, so the concise prompt's latency
    claim is measured rather than assumed, and live experiment progress over SSE.
-3. **Frontend and deployment.** An operator console served by the API itself, deployed to Render
-   with Neon Postgres: see [docs/frontend-plan.md](docs/frontend-plan.md).
+3. **Console, phases 2 to 5.** Experiment pages, authentication, deployment to Render with Neon,
+   and a live demo call with a streamed transcript: see [docs/frontend-plan.md](docs/frontend-plan.md).
 4. **API authentication** (role-scoped keys, a read-only public demo) and a CORS allow-list in
    place of `*`.
 5. Payment-date risk model feeding the dunning prioritisation.
