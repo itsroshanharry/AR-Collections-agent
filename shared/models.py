@@ -50,11 +50,30 @@ class Customer(BaseModel):
     timezone: str | None = None
 
 
+class AccountItem(BaseModel):
+    """Another overdue invoice of the same customer, carried on the invoice a call is
+    about so the agent can discuss the whole account in one conversation."""
+
+    invoice_id: str
+    amount: Decimal
+    currency: str = "INR"
+    due_date: date
+    days_overdue: int = Field(ge=0)
+
+
+def _money_forms(amount: Decimal) -> set[str]:
+    return {str(amount), f"{amount:.2f}", f"{amount:,.2f}", str(int(amount))}
+
+
 class Invoice(BaseModel):
     """One overdue invoice. This is the ground truth an agent may quote from.
 
     The judge cross-checks every figure the agent utters against this record, so
     anything not present here counts as a hallucination.
+
+    `other_open_invoices` is the rest of the customer's account in active dunning. Real
+    collectors work the account, not the invoice: one call covers everything overdue.
+    Empty for a single-invoice customer, and in the eval set.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -72,11 +91,21 @@ class Invoice(BaseModel):
     last_reminder_date: date | None = None
     promise_to_pay_date: date | None = None
     risk_tier: RiskTier | None = None
+    other_open_invoices: list[AccountItem] = Field(default_factory=list)
 
     @field_validator("currency")
     @classmethod
     def _upper_currency(cls, v: str) -> str:
         return v.upper()
+
+    def account_totals(self) -> dict[str, Decimal]:
+        """Overdue balance across the account, per currency (amounts in different
+        currencies are never summed)."""
+        totals: dict[str, Decimal] = {self.currency: self.amount}
+        for item in self.other_open_invoices:
+            cur = item.currency.upper()
+            totals[cur] = totals.get(cur, Decimal("0")) + item.amount
+        return totals
 
     def context_block(self) -> str:
         """Structured facts injected into the agent prompt.
@@ -100,21 +129,37 @@ class Invoice(BaseModel):
             lines.append(f"gstin: {self.customer.gstin}")
         if self.hsn_sac_code:
             lines.append(f"hsn_sac_code: {self.hsn_sac_code}")
+        if self.other_open_invoices:
+            lines.append("other_overdue_invoices_on_this_account:")
+            for item in self.other_open_invoices:
+                lines.append(
+                    f"  - {item.invoice_id}: {item.amount} {item.currency.upper()}, "
+                    f"due {item.due_date.isoformat()}, {item.days_overdue} days overdue"
+                )
+            totals = " + ".join(f"{amt} {cur}" for cur, amt in self.account_totals().items())
+            lines.append(f"account_total_overdue: {totals}")
         return "\n".join(lines)
 
     def quotable_figures(self) -> set[str]:
         """Every number/date the agent is allowed to state, normalised for matching."""
         figures = {
             self.invoice_id,
-            str(self.amount),
-            f"{self.amount:.2f}",
-            f"{self.amount:,.2f}",
-            str(int(self.amount)),
+            *_money_forms(self.amount),
             self.invoice_date.isoformat(),
             self.due_date.isoformat(),
             str(self.days_overdue),
             str(self.reminder_count),
         }
+        for item in self.other_open_invoices:
+            figures |= {
+                item.invoice_id,
+                *_money_forms(item.amount),
+                item.due_date.isoformat(),
+                str(item.days_overdue),
+            }
+        if self.other_open_invoices:
+            for total in self.account_totals().values():
+                figures |= _money_forms(total)
         if self.customer.gstin:
             figures.add(self.customer.gstin)
         if self.hsn_sac_code:
