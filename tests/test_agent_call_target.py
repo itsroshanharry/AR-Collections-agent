@@ -56,6 +56,21 @@ async def test_workflow_queue_wins_once_synced(db) -> None:
     assert (inv.invoice_id, tier) == ("WF-HIGH", RiskTier.HIGH)
 
 
+async def test_the_call_carries_the_customers_whole_account(db) -> None:
+    same_customer = Customer(customer_id="C-1", name="Acme")
+    await service.sync_invoices(
+        [
+            make_invoice(invoice_id="OLD", customer=same_customer, days_overdue=60),
+            make_invoice(invoice_id="NEW", customer=same_customer, days_overdue=20),
+        ],
+        now=NOW,
+    )
+    inv, _ = await pick_call_target(now=NOW)
+    assert inv.invoice_id == "OLD"
+    assert [i.invoice_id for i in inv.other_open_invoices] == ["NEW"]
+    assert "account_total_overdue: 100000.00 INR" in inv.context_block()
+
+
 async def test_nothing_due_does_not_fall_back_to_the_csv(db) -> None:
     await service.sync_invoices([invoice("WF-HIGH", 60)], now=NOW)
     await service.record_call_outcome(

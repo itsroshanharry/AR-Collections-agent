@@ -223,11 +223,13 @@ def build_server():
             return
         prompt = select_prompt(tier)
         logger.info(
-            "Calling about %s (%s %s, %d days overdue) tier=%s tone=%s prompt=%s",
+            "Calling about %s (%s %s, %d days overdue, +%d more on the account) "
+            "tier=%s tone=%s prompt=%s",
             invoice.invoice_id,
             invoice.amount,
             invoice.currency,
             invoice.days_overdue,
+            len(invoice.other_open_invoices),
             tier.value,
             tone_for_tier(tier).value,
             prompt.label,
