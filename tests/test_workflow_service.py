@@ -21,21 +21,6 @@ NOW = datetime(2026, 11, 24, 11, 0, tzinfo=IST)
 POLICY = get_policy()
 
 
-@pytest.fixture
-async def db(database_url, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    import ab_dashboard.db as db_module
-    from shared.config import get_settings
-
-    get_settings.cache_clear()
-    db_module._engine = None
-    db_module._sessionmaker = None
-    await db_module.init_db()
-    yield db_module
-    await db_module.dispose_engine()
-    get_settings.cache_clear()
-
-
 def medium(invoice_id="INV-M", customer="C-M", **kw):
     """30 days, ₹50k: medium tier, whose cadence opens with an email."""
     return make_invoice(
@@ -327,4 +312,13 @@ class TestApi:
     def test_tick_and_queue(self, client) -> None:
         client.post("/dunning/sync")
         assert client.post("/dunning/tick").status_code == 200
-        assert client.get("/dunning/queue").status_code == 200
+        # Empty or not depending on the wall clock (calling hours); the shape is what counts.
+        for call in client.get("/dunning/queue").json():
+            assert call["account_total"] == {call["currency"]: call["amount_outstanding"]}
+
+    def test_customer_account(self, client) -> None:
+        client.post("/dunning/sync")
+        account = client.get("/dunning/customers/C-H").json()
+        assert account["overdue_in_dunning"] == {"INR": "50000.00"}
+        assert [i["invoice_id"] for i in account["invoices"]] == ["INV-H"]
+        assert client.get("/dunning/customers/NOPE").status_code == 404

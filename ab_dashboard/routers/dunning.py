@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from ab_dashboard.db import ContactAttemptRow, InvoiceEventRow, InvoiceStateRow, TaskRow
-from shared.models import CallOutcome, OutcomeType
+from shared.models import AccountItem, CallOutcome, OutcomeType
 from workflow import service
 from workflow.policy import TaskType
 from workflow.state_machine import RESOLUTIONS, TransitionError
@@ -74,9 +74,19 @@ class AttemptOut(BaseModel):
     call_log_id: str | None
 
 
+class AccountItemOut(BaseModel):
+    invoice_id: str
+    amount_outstanding: str
+    currency: str
+    due_date: date
+    days_overdue: int
+
+
 class InvoiceDetailOut(BaseModel):
     state: InvoiceStateOut
     days_overdue_today: int
+    # The customer's other invoices in active dunning: what a call about this one covers.
+    other_open_invoices: list[AccountItemOut]
     tasks: list[TaskOut]
     contact_attempts: list[AttemptOut]
     timeline: list[EventOut]
@@ -84,6 +94,7 @@ class InvoiceDetailOut(BaseModel):
 
 class DueCallOut(BaseModel):
     invoice_id: str
+    customer_id: str
     customer_name: str
     tier: str
     priority: float
@@ -91,6 +102,22 @@ class DueCallOut(BaseModel):
     amount_outstanding: str
     currency: str
     broken_promises: int
+    # One call per customer: the rest of the account it covers, and the total to ask for.
+    other_open_invoices: list[AccountItemOut]
+    account_total: dict[str, str]
+
+
+class CustomerInvoiceOut(InvoiceStateOut):
+    days_overdue_today: int
+
+
+class CustomerAccountOut(BaseModel):
+    customer_id: str
+    customer_name: str
+    overdue_in_dunning: dict[str, str]
+    outstanding: dict[str, str]
+    invoices: list[CustomerInvoiceOut]
+    open_tasks: list[TaskOut]
 
 
 class OutcomeIn(BaseModel):
@@ -102,6 +129,9 @@ class OutcomeIn(BaseModel):
     dispute_reason: str | None = None
     payment_reference: str | None = None
     note: str = ""
+    # The call discussed the customer's whole account, not only this invoice. A promise
+    # for the account total then applies to every invoice they have in dunning.
+    covers_account: bool = False
 
 
 class OutcomeOut(BaseModel):
@@ -112,6 +142,8 @@ class OutcomeOut(BaseModel):
     discrepancy: str | None
     next_action_channel: str | None
     next_action_at: datetime | None
+    account_invoices: list[str]
+    promise_covers_account: bool
 
 
 class PaymentIn(BaseModel):
@@ -147,6 +179,20 @@ def _state_out(row: InvoiceStateRow) -> InvoiceStateOut:
         do_not_call=row.do_not_call,
         closed_reason=row.closed_reason,
     )
+
+
+def _item_out(item: AccountItem) -> AccountItemOut:
+    return AccountItemOut(
+        invoice_id=item.invoice_id,
+        amount_outstanding=f"{item.amount:.2f}",
+        currency=item.currency,
+        due_date=item.due_date,
+        days_overdue=item.days_overdue,
+    )
+
+
+def _money(totals: dict[str, Decimal]) -> dict[str, str]:
+    return {currency: f"{amount:.2f}" for currency, amount in totals.items()}
 
 
 def _task_out(task: TaskRow) -> TaskOut:
@@ -222,10 +268,12 @@ async def tick() -> service.TickReport:
 
 @router.get("/queue", response_model=list[DueCallOut])
 async def call_queue(limit: int = Query(default=20, ge=1, le=200)) -> list[DueCallOut]:
-    """Calls the playbook wants right now and the contact rules permit, by priority."""
+    """Calls the playbook wants right now and the contact rules permit, by priority.
+    One per customer, filed under their most urgent invoice and covering the rest."""
     return [
         DueCallOut(
             invoice_id=d.invoice.invoice_id,
+            customer_id=d.invoice.customer.customer_id,
             customer_name=d.invoice.customer.name,
             tier=d.tier.value,
             priority=d.priority,
@@ -233,9 +281,33 @@ async def call_queue(limit: int = Query(default=20, ge=1, le=200)) -> list[DueCa
             amount_outstanding=f"{d.invoice.amount:.2f}",
             currency=d.invoice.currency,
             broken_promises=d.broken_promises,
+            other_open_invoices=[_item_out(i) for i in d.invoice.other_open_invoices],
+            account_total=_money(d.invoice.account_totals()),
         )
         for d in await service.due_calls(limit=limit)
     ]
+
+
+@router.get("/customers/{customer_id}", response_model=CustomerAccountOut)
+async def get_customer(customer_id: str) -> CustomerAccountOut:
+    """The customer's whole account: every invoice, the balance in dunning, open work."""
+    try:
+        account = await service.customer_account(customer_id)
+    except Exception as exc:  # noqa: BLE001
+        _raise_for(exc)
+    return CustomerAccountOut(
+        customer_id=account.customer_id,
+        customer_name=account.customer_name,
+        overdue_in_dunning=_money(account.overdue_in_dunning),
+        outstanding=_money(account.outstanding),
+        invoices=[
+            CustomerInvoiceOut(
+                **_state_out(row).model_dump(), days_overdue_today=inv.days_overdue
+            )
+            for row, inv in account.invoices
+        ],
+        open_tasks=[_task_out(t) for t in account.open_tasks],
+    )
 
 
 @router.get("/invoices/{invoice_id}", response_model=InvoiceDetailOut)
@@ -248,6 +320,7 @@ async def get_invoice(invoice_id: str) -> InvoiceDetailOut:
     return InvoiceDetailOut(
         state=_state_out(detail.row),
         days_overdue_today=detail.invoice.days_overdue,
+        other_open_invoices=[_item_out(i) for i in detail.invoice.other_open_invoices],
         tasks=[_task_out(t) for t in detail.tasks],
         contact_attempts=[_attempt_out(a) for a in detail.attempts],
         timeline=[_event_out(e) for e in detail.events],
@@ -269,7 +342,9 @@ async def record_outcome(invoice_id: str, payload: OutcomeIn) -> OutcomeOut:
         {"payment_reference": payload.payment_reference} if payload.payment_reference else None
     )
     try:
-        report = await service.record_call_outcome(invoice_id, outcome, captured=captured)
+        report = await service.record_call_outcome(
+            invoice_id, outcome, captured=captured, cover_account=payload.covers_account
+        )
     except Exception as exc:  # noqa: BLE001
         _raise_for(exc)
     return OutcomeOut(**report.__dict__)
