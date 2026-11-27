@@ -23,6 +23,15 @@ groups:
           summary: "{{ $labels.assignee }} has {{ $value }} task(s) past due"
           description: GET /tasks?assignee={{ $labels.assignee }} lists them, soonest due first.
 
+      - alert: UnmatchedPaymentsPilingUp
+        # Every unmatched credit is a customer who paid and may still be chased for it.
+        expr: cash_unmatched_transactions > 25
+        for: 4h
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} bank credits are waiting to be applied by hand"
+          description: GET /cash/transactions?status=unmatched; each carries the reason it did not match.
+
   - name: call-quality
     rules:
       - alert: AgentComplianceViolation

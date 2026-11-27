@@ -598,7 +598,7 @@
     },
     {
       "type": "row",
-      "title": "Call quality",
+      "title": "Cash application",
       "id": 12,
       "collapsed": false,
       "gridPos": {
@@ -610,9 +610,212 @@
       "panels": []
     },
     {
+      "type": "stat",
+      "title": "Auto-match rate (24h)",
+      "id": 13,
+      "description": "Share of bank credits applied to invoices with no person involved.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(cash_transactions_total{status=\"matched\"}[24h])) / sum(increase(cash_transactions_total{status=~\"matched|unmatched\"}[24h]))",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.6
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Unmatched payments waiting",
+      "id": 14,
+      "description": "The exceptions queue: credits a person has to apply or dismiss.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cash_unmatched_transactions",
+          "legendFormat": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Credits per hour by matching rule",
+      "id": 15,
+      "description": "Which rule decided each credit. 'none' is an exception; 'manual' a person.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (rule) (increase(cash_transactions_total[1h]))",
+          "legendFormat": "{{rule}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "gradientMode": "none"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Call quality",
+      "id": 16,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
       "type": "timeseries",
       "title": "Calls per hour by outcome",
-      "id": 13,
+      "id": 17,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -622,7 +825,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 23
+        "y": 36
       },
       "targets": [
         {
@@ -672,7 +875,7 @@
     {
       "type": "timeseries",
       "title": "Median judge score by prompt version",
-      "id": 14,
+      "id": 18,
       "description": "Composite 1-5. A falling line is a prompt regression in production.",
       "datasource": {
         "type": "prometheus",
@@ -682,7 +885,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 23
+        "y": 36
       },
       "targets": [
         {
@@ -732,7 +935,7 @@
     {
       "type": "timeseries",
       "title": "Compliance violations and capture disagreements (per hour)",
-      "id": 15,
+      "id": 19,
       "description": "Both should sit at zero. Either rising needs a person to read transcripts.",
       "datasource": {
         "type": "prometheus",
@@ -742,7 +945,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 44
       },
       "targets": [
         {
@@ -801,20 +1004,20 @@
     {
       "type": "row",
       "title": "LLM providers",
-      "id": 16,
+      "id": 20,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 51
       },
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "Requests per minute by result",
-      "id": 17,
+      "id": 21,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -824,7 +1027,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 39
+        "y": 52
       },
       "targets": [
         {
@@ -874,7 +1077,7 @@
     {
       "type": "timeseries",
       "title": "p95 latency by provider",
-      "id": 18,
+      "id": 22,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -884,7 +1087,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 39
+        "y": 52
       },
       "targets": [
         {
@@ -934,7 +1137,7 @@
     {
       "type": "timeseries",
       "title": "Tokens per minute by kind",
-      "id": 19,
+      "id": 23,
       "description": "Reasoning tokens are billed against the same budget as the reply.",
       "datasource": {
         "type": "prometheus",
@@ -944,7 +1147,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 39
+        "y": 52
       },
       "targets": [
         {
@@ -994,7 +1197,7 @@
     {
       "type": "timeseries",
       "title": "Failovers per hour",
-      "id": 20,
+      "id": 24,
       "description": "A failover changes the model mid-experiment, which can confound an A/B.",
       "datasource": {
         "type": "prometheus",
@@ -1004,7 +1207,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 47
+        "y": 60
       },
       "targets": [
         {
@@ -1054,7 +1257,7 @@
     {
       "type": "timeseries",
       "title": "Rate-limit pacing wait (seconds per minute)",
-      "id": 21,
+      "id": 25,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1064,7 +1267,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 47
+        "y": 60
       },
       "targets": [
         {
@@ -1114,20 +1317,20 @@
     {
       "type": "row",
       "title": "Platform",
-      "id": 22,
+      "id": 26,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 55
+        "y": 68
       },
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "HTTP requests per second by status",
-      "id": 23,
+      "id": 27,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1137,7 +1340,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 56
+        "y": 69
       },
       "targets": [
         {
@@ -1187,7 +1390,7 @@
     {
       "type": "timeseries",
       "title": "HTTP p95 latency by route",
-      "id": 24,
+      "id": 28,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1197,7 +1400,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 56
+        "y": 69
       },
       "targets": [
         {
@@ -1247,7 +1450,7 @@
     {
       "type": "timeseries",
       "title": "Scheduler pass duration p95",
-      "id": 25,
+      "id": 29,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1257,7 +1460,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 64
+        "y": 77
       },
       "targets": [
         {
@@ -1307,7 +1510,7 @@
     {
       "type": "timeseries",
       "title": "Experiments",
-      "id": 26,
+      "id": 30,
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -1317,7 +1520,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 64
+        "y": 77
       },
       "targets": [
         {

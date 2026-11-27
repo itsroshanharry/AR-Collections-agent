@@ -191,6 +191,45 @@ panels += [
 ]
 y += 8
 
+# ---------------------------------------------------------------- cash application
+row("Cash application")
+panels += [
+    stat(
+        "Auto-match rate (24h)",
+        'sum(increase(cash_transactions_total{status="matched"}[24h])) / '
+        'sum(increase(cash_transactions_total{status=~"matched|unmatched"}[24h]))',
+        0,
+        6,
+        unit="percentunit",
+        thresholds=[
+            {"color": "red", "value": None},
+            {"color": "orange", "value": 0.6},
+            {"color": "green", "value": 0.8},
+        ],
+        desc="Share of bank credits applied to invoices with no person involved.",
+    ),
+    stat(
+        "Unmatched payments waiting",
+        "cash_unmatched_transactions",
+        6,
+        6,
+        thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 10}],
+        desc="The exceptions queue: credits a person has to apply or dismiss.",
+    ),
+]
+y += 4
+panels += [
+    series(
+        "Credits per hour by matching rule",
+        [("sum by (rule) (increase(cash_transactions_total[1h]))", "{{rule}}")],
+        0,
+        24,
+        stack=True,
+        desc="Which rule decided each credit. 'none' is an exception; 'manual' a person.",
+    ),
+]
+y += 8
+
 # ---------------------------------------------------------------- call quality
 row("Call quality")
 panels += [
