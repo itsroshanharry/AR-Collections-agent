@@ -304,6 +304,44 @@ class InvoiceEventRow(Base):
     )
 
 
+class BankTransactionRow(Base):
+    """A credit on the bank statement, and what cash application did with it.
+
+    status: matched (applied automatically), unmatched (in the exceptions queue for a
+    person), applied (a person applied it), dismissed (not a customer payment: a refund
+    to issue, a transfer between own accounts).
+    """
+
+    __tablename__ = "bank_transactions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    # The bank's unique transaction reference. Unique, so re-importing a statement or
+    # replaying a feed cannot apply the same money twice.
+    utr: Mapped[str] = mapped_column(String(64), unique=True)
+    value_date: Mapped[date] = mapped_column(Date)
+    amount: Mapped[str] = mapped_column(String(32))  # text, as for invoice balances
+    currency: Mapped[str] = mapped_column(String(8))
+    reference: Mapped[str] = mapped_column(Text, default="")
+    payer_name: Mapped[str] = mapped_column(String(255), default="")
+    source: Mapped[str] = mapped_column(String(16))  # feed | statement | simulated
+
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    match_rule: Mapped[str] = mapped_column(String(32))
+    reason: Mapped[str] = mapped_column(Text, default="")
+    # The likely customer, also for an unmatched line: the first thing a person needs.
+    customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # [{"invoice_id", "amount", "settles"}] - where the money went.
+    allocations: Mapped[list] = mapped_column(JSON, default=list)
+    resolution_note: Mapped[str] = mapped_column(Text, default="")
+
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Two people resolving the same exception at once must not both apply it.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}
+
+
 def normalise_database_url(url: str) -> str:
     """Coerce a provider-supplied URL into an async SQLAlchemy DSN.
 
