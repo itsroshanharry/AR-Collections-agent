@@ -20,8 +20,9 @@ import uuid
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ab_dashboard import health as readiness
@@ -189,3 +190,30 @@ async def ready(response: Response) -> dict[str, object]:
         "checks": {name: c.__dict__ for name, c in checks.items()},
         "llm_provider_configured": settings.has_any_llm_provider,
     }
+
+
+# --------------------------------------------------------------------------------------
+# Operator console (frontend/), served from the same origin as the API
+# --------------------------------------------------------------------------------------
+
+FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    return RedirectResponse("/app/" if (FRONTEND_DIST / "index.html").is_file() else "/docs")
+
+
+@app.get("/app/{path:path}", include_in_schema=False)
+async def console(path: str) -> FileResponse:
+    """The built single-page app. A real file (a hashed asset) is served as is; any
+    other path is a client-side route and gets index.html."""
+    root_dir = FRONTEND_DIST.resolve()
+    index = root_dir / "index.html"
+    if not index.is_file():
+        raise HTTPException(404, "Frontend not built: cd frontend && npm ci && npm run build")
+    candidate = (root_dir / path).resolve()
+    if path and candidate.is_file() and root_dir in candidate.parents:
+        # Vite fingerprints asset names, so they can be cached for good.
+        return FileResponse(candidate, headers={"Cache-Control": "public, max-age=31536000"})
+    return FileResponse(index, headers={"Cache-Control": "no-cache"})
