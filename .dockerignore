@@ -17,3 +17,7 @@ data/synthetic/*
 *.sqlite3
 *.log
 artifacts/
+
+# Built inside the image's console stage.
+frontend/node_modules
+frontend/dist
