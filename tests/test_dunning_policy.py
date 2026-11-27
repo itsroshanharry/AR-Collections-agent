@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -92,6 +93,16 @@ class TestPolicyFile:
         raw = copy.deepcopy(_raw())
         raw["default_timezones"]["INR"] = "Mars/Olympus_Mons"
         with pytest.raises(PolicyError, match="timezone"):
+            parse_policy(raw)
+
+    def test_settlement_tolerance_per_currency(self) -> None:
+        assert POLICY.tolerance("inr") == Decimal("50")
+        assert POLICY.tolerance("JPY") == Decimal("0")  # unlisted: exact amounts only
+
+    def test_negative_tolerance_rejected(self) -> None:
+        raw = _raw()
+        raw["cash_application"]["settlement_tolerance"]["INR"] = -1
+        with pytest.raises(PolicyError, match="negative"):
             parse_policy(raw)
 
     def test_timezone_falls_back_to_currency_then_default(self) -> None:

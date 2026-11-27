@@ -78,3 +78,15 @@ task_sla_days:
   reconcile_payment: 2
   escalation_review: 1
   review_call: 2
+
+# Matching bank transactions to invoices (workflow/cash_application.py).
+cash_application:
+  # A payment short of an invoice's balance by at most this much still settles it, and
+  # the remainder is written off as bank charges. Banks routinely deduct a transfer fee
+  # in transit; chasing a customer for 25 rupees costs more than it recovers.
+  settlement_tolerance:
+    INR: 50
+    USD: 1
+    SGD: 1
+    EUR: 1
+    GBP: 1

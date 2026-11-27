@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import time
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -68,6 +69,9 @@ class DunningPolicy:
     promise_grace_days: int
     escalate_after_broken_promises: int
     task_sla_days: dict[TaskType, int]
+    # Cash application: a payment short of the balance by at most this much (per
+    # currency) still settles the invoice - bank charges deducted in transit.
+    settlement_tolerance: dict[str, Decimal]
 
     def cadence(self, tier: RiskTier) -> tuple[CadenceStep, ...]:
         return self.cadences[tier]
@@ -78,6 +82,9 @@ class DunningPolicy:
 
     def sla_days(self, task_type: TaskType) -> int:
         return self.task_sla_days.get(task_type, 2)
+
+    def tolerance(self, currency: str) -> Decimal:
+        return self.settlement_tolerance.get(currency.upper(), Decimal("0"))
 
 
 def _parse_time(raw: str, field: str) -> time:
@@ -150,6 +157,16 @@ def parse_policy(raw: dict) -> DunningPolicy:
     except ValueError as exc:
         raise PolicyError(f"task_sla_days: {exc}") from exc
 
+    cash = raw.get("cash_application") or {}
+    try:
+        tolerance = {
+            k.upper(): Decimal(str(v)) for k, v in (cash.get("settlement_tolerance") or {}).items()
+        }
+    except InvalidOperation as exc:
+        raise PolicyError(f"cash_application.settlement_tolerance: {exc}") from exc
+    if any(v < 0 for v in tolerance.values()):
+        raise PolicyError("cash_application.settlement_tolerance cannot be negative")
+
     return DunningPolicy(
         cadences=cadences,
         rules=rules,
@@ -158,6 +175,7 @@ def parse_policy(raw: dict) -> DunningPolicy:
         promise_grace_days=int(promises.get("grace_days", 2)),
         escalate_after_broken_promises=int(promises.get("escalate_after_broken", 2)),
         task_sla_days=task_sla_days,
+        settlement_tolerance=tolerance,
     )
 
 
