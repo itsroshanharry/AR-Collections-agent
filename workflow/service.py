@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
 from ab_dashboard.db import (
+    BankTransactionRow,
     ContactAttemptRow,
     InvoiceEventRow,
     InvoiceStateRow,
@@ -739,6 +740,9 @@ class OutcomeReport:
     # applied to all of them (True) or to this invoice only.
     account_invoices: list[str] = field(default_factory=list)
     promise_covers_account: bool = False
+    # "Already paid", and the payment was found in the bank feed: the transaction that
+    # verified it. None leaves the reconcile task open for the feed or a person.
+    payment_verified_by: str | None = None
 
 
 async def _apply_to_account(
@@ -878,6 +882,18 @@ async def record_call_outcome(
         )
         created = await _apply(session, row, transition, now, call_log_id=call_log_id)
         await session.flush()
+        verified_by = None
+        if row.state == DunningState.PAID_UNVERIFIED.value:
+            # Imported here: cash application builds on this module's payment path.
+            from workflow.cash import verify_reported_payment
+
+            verified_by = await verify_reported_payment(
+                session,
+                row,
+                transition.detail.get("payment_reference"),
+                now=now,
+                policy=policy,
+            )
         if row.state != DunningState.CLOSED.value:
             await _retier(session, row, now, today)
         await _reschedule(session, row, policy, now)
@@ -901,6 +917,7 @@ async def record_call_outcome(
             next_action_at=row.next_action_at,
             account_invoices=covered,
             promise_covers_account=whole,
+            payment_verified_by=verified_by,
         )
 
     try:
@@ -920,7 +937,8 @@ async def record_payment(
     now: datetime | None = None,
     policy: DunningPolicy | None = None,
 ) -> InvoiceStateRow:
-    """Apply a payment from the ledger. Stands in for an ERP/bank feed."""
+    """Post a payment to one invoice by hand. Bank lines go through cash application
+    (workflow/cash.py), which matches them to invoices first."""
     if amount <= 0:
         raise ValueError("payment amount must be positive")
     now = as_utc(now or datetime.now(UTC))
@@ -928,22 +946,42 @@ async def record_payment(
 
     async def op(session: AsyncSession) -> InvoiceStateRow:
         row = await _load(session, invoice_id)
-        if row.state == DunningState.CLOSED.value:
-            raise TransitionError(f"{invoice_id} is already closed ({row.closed_reason})")
-        outstanding = max(Decimal(row.amount_outstanding) - amount, Decimal("0"))
-        row.amount_outstanding = f"{outstanding:.2f}"
-        await _apply(
-            session,
-            row,
-            on_payment(_snapshot(row), outstanding, amount=amount, reference=reference),
-            now,
-        )
-        if row.state != DunningState.CLOSED.value:
-            await _retier(session, row, now, local_today(row, policy, now))
-        await _reschedule(session, row, policy, now)
+        await apply_payment(session, row, amount, reference=reference, now=now, policy=policy)
         return row
 
     return await _with_retry(op)
+
+
+async def apply_payment(
+    session: AsyncSession,
+    row: InvoiceStateRow,
+    amount: Decimal,
+    *,
+    reference: str,
+    now: datetime,
+    policy: DunningPolicy,
+    settles: bool = False,
+    detail: dict | None = None,
+) -> None:
+    """Reduce an invoice's balance, closing it (and every open follow-up) when paid.
+
+    `settles` closes it even if a remainder is left: cash application decided the
+    remainder is within tolerance (bank charges), and it is written off and recorded.
+    """
+    if row.state == DunningState.CLOSED.value:
+        raise TransitionError(f"{row.invoice_id} is already closed ({row.closed_reason})")
+    outstanding = max(Decimal(row.amount_outstanding) - amount, Decimal("0"))
+    written_off = outstanding if settles else Decimal("0")
+    outstanding -= written_off
+    row.amount_outstanding = f"{outstanding:.2f}"
+    transition = on_payment(_snapshot(row), outstanding, amount=amount, reference=reference)
+    if written_off:
+        transition.detail["written_off"] = f"{written_off:.2f}"
+    transition.detail.update(detail or {})
+    await _apply(session, row, transition, now)
+    if row.state != DunningState.CLOSED.value:
+        await _retier(session, row, now, local_today(row, policy, now))
+    await _reschedule(session, row, policy, now)
 
 
 async def resolve_task(
@@ -1149,6 +1187,9 @@ async def refresh_metrics(*, now: datetime | None = None) -> None:
                 ).where(InvoiceStateRow.state != DunningState.CLOSED.value)
             )
         ).all()
+        unmatched = await session.scalar(
+            select(func.count()).where(BankTransactionRow.status == "unmatched")
+        )
 
     # Cleared first so a state or queue that has emptied reports nothing rather than
     # its last non-zero value.
@@ -1169,6 +1210,7 @@ async def refresh_metrics(*, now: datetime | None = None) -> None:
     for tier, total in by_tier.items():
         m.DUNNING_OUTSTANDING.labels(tier).set(float(total))
     m.DUNNING_CALLS_DUE.set(len(await due_calls(now=now, limit=100_000, with_account=False)))
+    m.CASH_UNMATCHED.set(unmatched or 0)
 
 
 async def has_invoices() -> bool:

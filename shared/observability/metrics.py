@@ -173,6 +173,20 @@ DUNNING_OUTSTANDING = Gauge(
     registry=REGISTRY,
 )
 
+# Cash application.
+CASH_TRANSACTIONS = Counter(
+    "cash_transactions_total",
+    "Bank credits processed, by outcome (matched, unmatched, applied, dismissed) and the "
+    "rule that decided it. matched / (matched + unmatched) is the auto-match rate.",
+    ["status", "rule"],
+    registry=REGISTRY,
+)
+CASH_UNMATCHED = Gauge(
+    "cash_unmatched_transactions",
+    "Bank credits waiting in the exceptions queue for a person.",
+    registry=REGISTRY,
+)
+
 # --------------------------------------------------------------------------------------
 # Experiments
 # --------------------------------------------------------------------------------------

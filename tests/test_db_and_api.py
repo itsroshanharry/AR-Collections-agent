@@ -78,6 +78,7 @@ class TestDialectPortability:
             "contact_attempts",
             "tasks",
             "invoice_events",
+            "bank_transactions",
         }
 
     def test_pairwise_verdict_is_persisted(self) -> None:
