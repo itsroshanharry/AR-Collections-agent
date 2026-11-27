@@ -458,3 +458,22 @@ def parse_statement(text: str) -> list[BankLine]:
             )
         )
     return lines
+
+
+async def simulate(
+    *, count: int = 8, seed: int | None = None, now: datetime | None = None
+) -> IngestReport:
+    """Generate a day of realistic credits from the open invoices and ingest them: the
+    demo stand-in for a bank feed (see workflow/bank_feed.py)."""
+    from workflow.bank_feed import simulate_feed
+
+    now = as_utc(now or datetime.now(UTC))
+    async with get_sessionmaker()() as session:
+        rows = (
+            await session.execute(
+                select(InvoiceStateRow).where(InvoiceStateRow.state != DunningState.CLOSED.value)
+            )
+        ).scalars()
+        items = [_item(r) for r in rows]
+    lines = simulate_feed(items, today=now.date(), count=count, seed=seed)
+    return await ingest(lines, source="simulated", now=now)
