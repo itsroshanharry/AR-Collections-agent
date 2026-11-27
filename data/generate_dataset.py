@@ -37,6 +37,9 @@ DEFAULT_OUTPUT = SYNTHETIC_DIR / "ar_dataset_enriched.csv"
 # Service-sector HSN/SAC codes plausible for B2B invoicing.
 HSN_SAC_CODES = ["998314", "998313", "996511", "998311", "997212"]
 CURRENCIES = ["INR", "INR", "INR", "USD", "SGD"]  # weighted toward INR
+# Invoices are spread round-robin over this many customers: 500 rows gives each customer
+# two or three, which is what makes collections an account-level job.
+CUSTOMER_COUNT = 180
 DISPUTE_RATE = 0.08
 
 # Fallback ageing distribution (days overdue) when no Kaggle base is present. Shaped
@@ -228,8 +231,27 @@ def generate(
             RAW_DIR,
         )
 
+    # One record per customer, shared by all their invoices. A customer is billed in one
+    # currency under one contract, and their name is what a bank statement's payer field
+    # is matched against, so it must not change from one invoice to the next.
+    customers: dict[str, tuple[Customer, str]] = {}
+
     invoices: list[Invoice] = []
     for i in range(rows):
+        customer_id = f"CUST-{2000 + (i % CUSTOMER_COUNT):04d}"
+        if customer_id not in customers:
+            customers[customer_id] = (
+                Customer(
+                    customer_id=customer_id,
+                    name=fake.company(),
+                    contact_name=fake.name(),
+                    phone=fake.phone_number(),
+                    email=fake.company_email(),
+                    gstin=_fake_gstin(fake),
+                ),
+                rng.choice(CURRENCIES),
+            )
+        customer, currency = customers[customer_id]
         days_overdue = _sample_days_overdue(rng, lateness)
         due = as_of - timedelta(days=days_overdue)
         # Typical B2B net terms.
@@ -243,19 +265,11 @@ def generate(
             else None
         )
 
-        customer = Customer(
-            customer_id=f"CUST-{2000 + (i % 180):04d}",
-            name=fake.company(),
-            contact_name=fake.name(),
-            phone=fake.phone_number(),
-            email=fake.company_email(),
-            gstin=_fake_gstin(fake),
-        )
         invoice = Invoice(
             invoice_id=f"INV-{100000 + i}",
             customer=customer,
             amount=_sample_amount(rng, amounts),
-            currency=rng.choice(CURRENCIES),
+            currency=currency,
             invoice_date=invoice_date,
             due_date=due,
             days_overdue=days_overdue,
