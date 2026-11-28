@@ -187,12 +187,13 @@ Get-Process python | Stop-Process -Force
 ## 7. Tests
 
 ```powershell
-uv run pytest -q          # 174 tests, fully mocked, no network
+uv run pytest -q          # ~490 tests, fully mocked, no network
 uv run ruff check .
-
-# Also verify Postgres compatibility before deploying
-$env:TEST_POSTGRES_URL="postgresql://..."; uv run pytest tests/test_db_and_api.py
 ```
+
+CI also runs the whole suite against a real Postgres. To do that yourself, set
+`TEST_POSTGRES_URL` to a **throwaway** database: every test drops and recreates its `public`
+schema, so never point it at the Neon database the deployed demo uses.
 
 ---
 
@@ -219,6 +220,23 @@ docker run -p 8000:8000 --env-file .env ar-dashboard
 Render: point a Blueprint at [`infra/render.yaml`](infra/render.yaml). Set `DATABASE_URL` to a **Neon**
 connection string — Render's own free Postgres is deleted 30 days after creation. Free web services
 also spin down after ~15 min idle with a 30–60s cold start, so warm it before a live demo.
+
+### Neon
+
+1. Sign up at [neon.tech](https://neon.tech) (free plan, no card) and create a project. Pick
+   region **AWS US West 2 (Oregon)**, next to Render's default region.
+2. **Connect** → switch **Connection pooling** off → copy the `postgresql://...` string. Use it
+   as given; the app switches it to the async driver itself, and `sslmode=require` stays.
+3. Optional check from your machine, without saving it anywhere (`Read-Host` input stays out of
+   your shell history):
+
+   ```powershell
+   $env:DATABASE_URL = Read-Host "Neon connection string"
+   uv run python -m shared.check_keys      # Database should read OK
+   Remove-Item Env:DATABASE_URL
+   ```
+
+The tables are created by the migrations on the app's first start; there is nothing to run by hand.
 
 ---
 

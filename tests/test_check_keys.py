@@ -148,6 +148,16 @@ async def test_bad_database_url_fails():
     assert result.status == ck.FAIL
 
 
+async def test_plain_postgres_url_uses_the_async_driver():
+    # Neon hands out `postgresql://`; checked raw, that picks a sync driver and raises
+    # before connecting. Normalised, it reaches the network (and fails on this bad host).
+    s = settings(database_url="postgresql://u:p@127.0.0.1:1/db?sslmode=require&connect_timeout=1")
+    result = by_name(await ck.run_checks(s, transport=transport({})))["Database"]
+    assert result.status == ck.FAIL
+    assert result.detail.startswith("postgresql+psycopg:")
+    assert "asyncio extension" not in result.detail
+
+
 def test_livekit_token_is_a_valid_hs256_jwt():
     token = ck.livekit_token("APIkey", "secret", now=1_000_000)
     header, payload, signature = token.split(".")

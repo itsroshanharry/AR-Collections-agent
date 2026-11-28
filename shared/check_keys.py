@@ -199,16 +199,23 @@ async def check_database(s: Settings) -> Result:
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
+    from ab_dashboard.db import normalise_database_url
+
     used_for = "everything: workflow state, tasks, experiments"
-    kind = s.database_url.split(":", 1)[0]
-    engine = create_async_engine(s.database_url)
+    # Check the URL the app would actually use: Neon hands out `postgresql://`, which
+    # the app rewrites to the async psycopg driver.
+    url = normalise_database_url(s.database_url)
+    kind = url.split(":", 1)[0]
+    engine = None
     try:
+        engine = create_async_engine(url)
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001 - any failure is the answer
         return Result("Database", FAIL, f"{kind}: {type(exc).__name__}: {str(exc)[:120]}", used_for)
     finally:
-        await engine.dispose()
+        if engine is not None:
+            await engine.dispose()
     return Result("Database", OK, f"{kind} connection works", used_for)
 
 
@@ -254,7 +261,10 @@ def render(results: list[Result]) -> str:
 
 
 def main() -> int:
-    results = asyncio.run(run_checks())
+    # psycopg's async mode cannot run on Windows' default Proactor loop, so a Postgres
+    # DATABASE_URL would always fail here on Windows without this.
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    results = asyncio.run(run_checks(), loop_factory=loop_factory)
     print(render(results))
     return 1 if any(r.status == FAIL for r in results) else 0
 
