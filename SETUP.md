@@ -109,7 +109,10 @@ Open <http://127.0.0.1:8000/docs> and drive it from there:
 | 3 | `GET /experiments/{id}` | poll until `status` is `completed` |
 | 4 | `GET /experiments/{id}/results` | win-rate, latency, hallucination-rate, per-scenario |
 
-Drop `"limit": 3` for the full 18 scenarios (~14 min, ~100K tokens for both variants).
+Measured cost: **~16K Groq tokens and ~2 min per scenario** (both variants, the judge and the
+pairwise comparison), ~10K of it on `gpt-oss-120b` and ~6K on `gpt-oss-20b`. So `"limit": 3` is
+~50K tokens and ~6 min; the full 18 scenarios is ~300K tokens and ~36 min, which nearly empties
+the 120B model's 200K daily allowance on its own.
 
 ---
 
