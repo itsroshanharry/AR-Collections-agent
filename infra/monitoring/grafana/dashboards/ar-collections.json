@@ -294,7 +294,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(collections_call_hallucinations_total[24h])) / clamp_min(sum(increase(collections_calls_total[24h])), 1)",
+          "expr": "(sum(increase(collections_call_hallucinations_total[24h])) or vector(0)) / clamp_min(sum(increase(collections_calls_total[24h])), 1)",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",

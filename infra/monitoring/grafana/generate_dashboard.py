@@ -141,7 +141,9 @@ panels += [
     ),
     stat(
         "Hallucination rate (24h)",
-        "sum(increase(collections_call_hallucinations_total[24h])) / "
+        # `or vector(0)`: the counter has no series until the first hallucination, and
+        # without it the healthy case (none at all) would read "No data".
+        "(sum(increase(collections_call_hallucinations_total[24h])) or vector(0)) / "
         "clamp_min(sum(increase(collections_calls_total[24h])), 1)",
         19,
         5,
