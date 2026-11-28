@@ -1422,6 +1422,140 @@
         "title": "RiskTier",
         "type": "string"
       },
+      "ScenarioDetailOut": {
+        "description": "Both variants' transcripts for one scenario, and why the judge picked a winner.",
+        "properties": {
+          "customer_persona": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Persona"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the eval set; None if since removed",
+            "title": "Description"
+          },
+          "expected_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Outcome"
+          },
+          "expected_promise_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Promise Date"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "is_adversarial": {
+            "title": "Is Adversarial",
+            "type": "boolean"
+          },
+          "pairwise_reason": {
+            "title": "Pairwise Reason",
+            "type": "string"
+          },
+          "pairwise_winner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pairwise Winner"
+          },
+          "presented_a_first": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the judge saw A's transcript first (order is randomised)",
+            "title": "Presented A First"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "variant_a": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "variant_b": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "experiment_id",
+          "scenario_id",
+          "description",
+          "customer_persona",
+          "expected_outcome",
+          "expected_promise_date",
+          "is_adversarial",
+          "tags",
+          "pairwise_winner",
+          "pairwise_reason",
+          "presented_a_first",
+          "variant_a",
+          "variant_b"
+        ],
+        "title": "ScenarioDetailOut",
+        "type": "object"
+      },
       "ScenarioResultOut": {
         "properties": {
           "a_composite": {
@@ -2110,6 +2244,125 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VariantRunOut": {
+        "description": "One variant's run of one scenario: the transcript and everything scored on it.",
+        "properties": {
+          "compliance_violations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Compliance Violations",
+            "type": "array"
+          },
+          "composite": {
+            "title": "Composite",
+            "type": "number"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "extracted_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted Outcome"
+          },
+          "hallucinated": {
+            "title": "Hallucinated",
+            "type": "boolean"
+          },
+          "hallucinated_figures": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hallucinated Figures",
+            "type": "array"
+          },
+          "judge_rationale": {
+            "title": "Judge Rationale",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mean_turn_latency_ms": {
+            "title": "Mean Turn Latency Ms",
+            "type": "number"
+          },
+          "outcome_match": {
+            "title": "Outcome Match",
+            "type": "boolean"
+          },
+          "promise_date_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promise Date Match"
+          },
+          "prompt_id": {
+            "title": "Prompt Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Scores",
+            "type": "object"
+          },
+          "total_latency_ms": {
+            "title": "Total Latency Ms",
+            "type": "number"
+          },
+          "transcript": {
+            "title": "Transcript",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "prompt_id",
+          "transcript",
+          "scores",
+          "composite",
+          "judge_rationale",
+          "hallucinated",
+          "hallucinated_figures",
+          "compliance_violations",
+          "extracted_outcome",
+          "outcome_match",
+          "promise_date_match",
+          "total_latency_ms",
+          "mean_turn_latency_ms",
+          "provider",
+          "error"
+        ],
+        "title": "VariantRunOut",
         "type": "object"
       },
       "VariantSummaryOut": {
@@ -3192,6 +3445,58 @@
           }
         },
         "summary": "Experiment Results",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/experiments/{experiment_id}/scenarios/{scenario_id}": {
+      "get": {
+        "description": "Drill into one scenario: both transcripts side by side, each judge score with its\nrationale, the figures flagged as made up, and the head-to-head judge's reason.",
+        "operationId": "scenario_detail_experiments__experiment_id__scenarios__scenario_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scenario Detail",
         "tags": [
           "experiments"
         ]

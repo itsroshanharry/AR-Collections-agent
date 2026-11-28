@@ -364,6 +364,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/experiments/{experiment_id}/scenarios/{scenario_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scenario Detail
+         * @description Drill into one scenario: both transcripts side by side, each judge score with its
+         *     rationale, the figures flagged as made up, and the head-to-head judge's reason.
+         */
+        get: operations["scenario_detail_experiments__experiment_id__scenarios__scenario_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1030,6 +1051,42 @@ export interface components {
          * @enum {string}
          */
         RiskTier: "low" | "medium" | "high" | "critical";
+        /**
+         * ScenarioDetailOut
+         * @description Both variants' transcripts for one scenario, and why the judge picked a winner.
+         */
+        ScenarioDetailOut: {
+            /** Customer Persona */
+            customer_persona: string | null;
+            /**
+             * Description
+             * @description From the eval set; None if since removed
+             */
+            description: string | null;
+            /** Expected Outcome */
+            expected_outcome: string | null;
+            /** Expected Promise Date */
+            expected_promise_date: string | null;
+            /** Experiment Id */
+            experiment_id: string;
+            /** Is Adversarial */
+            is_adversarial: boolean;
+            /** Pairwise Reason */
+            pairwise_reason: string;
+            /** Pairwise Winner */
+            pairwise_winner: string | null;
+            /**
+             * Presented A First
+             * @description Whether the judge saw A's transcript first (order is randomised)
+             */
+            presented_a_first: boolean | null;
+            /** Scenario Id */
+            scenario_id: string;
+            /** Tags */
+            tags: string[];
+            variant_a: components["schemas"]["VariantRunOut"] | null;
+            variant_b: components["schemas"]["VariantRunOut"] | null;
+        };
         /** ScenarioResultOut */
         ScenarioResultOut: {
             /** A Composite */
@@ -1351,6 +1408,46 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * VariantRunOut
+         * @description One variant's run of one scenario: the transcript and everything scored on it.
+         */
+        VariantRunOut: {
+            /** Compliance Violations */
+            compliance_violations: string[];
+            /** Composite */
+            composite: number;
+            /** Error */
+            error: string | null;
+            /** Extracted Outcome */
+            extracted_outcome: string | null;
+            /** Hallucinated */
+            hallucinated: boolean;
+            /** Hallucinated Figures */
+            hallucinated_figures: string[];
+            /** Judge Rationale */
+            judge_rationale: string;
+            /** Label */
+            label: string;
+            /** Mean Turn Latency Ms */
+            mean_turn_latency_ms: number;
+            /** Outcome Match */
+            outcome_match: boolean;
+            /** Promise Date Match */
+            promise_date_match: boolean | null;
+            /** Prompt Id */
+            prompt_id: string;
+            /** Provider */
+            provider: string;
+            /** Scores */
+            scores: {
+                [key: string]: number;
+            };
+            /** Total Latency Ms */
+            total_latency_ms: number;
+            /** Transcript */
+            transcript: string;
         };
         /** VariantSummaryOut */
         VariantSummaryOut: {
@@ -1995,6 +2092,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResultsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scenario_detail_experiments__experiment_id__scenarios__scenario_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioDetailOut"];
                 };
             };
             /** @description Validation Error */

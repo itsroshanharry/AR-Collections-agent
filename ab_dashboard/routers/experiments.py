@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -20,6 +20,7 @@ from ab_dashboard.db import (
 )
 from ab_dashboard.experiment_runner import VariantSummary
 from shared.config import get_settings
+from shared.eval.eval_set import EvalSetError, cached_eval_set
 from shared.eval.metrics import injection_held
 from shared.eval.stats import compare
 
@@ -122,6 +123,47 @@ class ResultsOut(BaseModel):
     )
     verdict: str
     per_scenario: list[ScenarioResultOut]
+
+
+class VariantRunOut(BaseModel):
+    """One variant's run of one scenario: the transcript and everything scored on it."""
+
+    label: str
+    prompt_id: str
+    transcript: str
+    scores: dict[str, float]
+    composite: float
+    judge_rationale: str
+    hallucinated: bool
+    hallucinated_figures: list[str]
+    compliance_violations: list[str]
+    extracted_outcome: str | None
+    outcome_match: bool
+    promise_date_match: bool | None
+    total_latency_ms: float
+    mean_turn_latency_ms: float
+    provider: str
+    error: str | None
+
+
+class ScenarioDetailOut(BaseModel):
+    """Both variants' transcripts for one scenario, and why the judge picked a winner."""
+
+    experiment_id: str
+    scenario_id: str
+    description: str | None = Field(description="From the eval set; None if since removed")
+    customer_persona: str | None
+    expected_outcome: str | None
+    expected_promise_date: date | None
+    is_adversarial: bool
+    tags: list[str]
+    pairwise_winner: str | None
+    pairwise_reason: str
+    presented_a_first: bool | None = Field(
+        description="Whether the judge saw A's transcript first (order is randomised)"
+    )
+    variant_a: VariantRunOut | None
+    variant_b: VariantRunOut | None
 
 
 def _experiment_out(row: ExperimentRow) -> ExperimentOut:
@@ -401,4 +443,72 @@ async def experiment_results(
         by_tag=by_tag,
         verdict=verdict,
         per_scenario=per_scenario,
+    )
+
+
+def _run_out(row: ResultRow | None) -> VariantRunOut | None:
+    if row is None:
+        return None
+    return VariantRunOut(
+        label=row.variant_label,
+        prompt_id=row.prompt_id,
+        transcript=row.transcript,
+        scores=dict(row.scores or {}),
+        composite=row.composite,
+        judge_rationale=row.judge_rationale,
+        hallucinated=row.hallucinated,
+        hallucinated_figures=[str(f) for f in row.hallucinated_figures or []],
+        compliance_violations=[str(v) for v in row.compliance_violations or []],
+        extracted_outcome=row.extracted_outcome,
+        outcome_match=row.outcome_match,
+        promise_date_match=row.promise_date_match,
+        total_latency_ms=row.total_latency_ms,
+        mean_turn_latency_ms=row.mean_turn_latency_ms,
+        provider=row.provider,
+        error=row.error,
+    )
+
+
+@router.get("/{experiment_id}/scenarios/{scenario_id}", response_model=ScenarioDetailOut)
+async def scenario_detail(
+    experiment_id: str, scenario_id: str, session: AsyncSession = Depends(get_session)
+) -> ScenarioDetailOut:
+    """Drill into one scenario: both transcripts side by side, each judge score with its
+    rationale, the figures flagged as made up, and the head-to-head judge's reason."""
+    if await session.get(ExperimentRow, experiment_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No experiment {experiment_id!r}")
+    rows = {
+        r.variant_label: r
+        for r in (
+            await session.execute(
+                select(ResultRow).where(
+                    ResultRow.experiment_id == experiment_id,
+                    ResultRow.scenario_id == scenario_id,
+                )
+            )
+        ).scalars()
+    }
+    if not rows:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"No results for scenario {scenario_id!r} in this run"
+        )
+    try:
+        scenario = next((s for s in cached_eval_set() if s.scenario_id == scenario_id), None)
+    except EvalSetError:
+        scenario = None
+    first = rows.get("A") or rows["B"]
+    return ScenarioDetailOut(
+        experiment_id=experiment_id,
+        scenario_id=scenario_id,
+        description=scenario.description if scenario else None,
+        customer_persona=scenario.customer_persona if scenario else None,
+        expected_outcome=first.expected_outcome,
+        expected_promise_date=scenario.expected_promise_date if scenario else None,
+        is_adversarial=first.is_adversarial,
+        tags=list(first.tags or []),
+        pairwise_winner=first.pairwise_winner,
+        pairwise_reason=first.pairwise_reason,
+        presented_a_first=first.presented_a_first,
+        variant_a=_run_out(rows.get("A")),
+        variant_b=_run_out(rows.get("B")),
     )
