@@ -756,6 +756,8 @@ export interface components {
         };
         /** EventOut */
         EventOut: {
+            /** Actor */
+            actor: string;
             /**
              * Created At
              * Format: date-time
@@ -807,6 +809,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Created By */
+            created_by: string | null;
             /** Error */
             error: string | null;
             /** Eval Set */
@@ -1273,6 +1277,8 @@ export interface components {
             resolution_note: string;
             /** Resolved At */
             resolved_at: string | null;
+            /** Resolved By */
+            resolved_by: string | null;
             /** Status */
             status: string;
             /** Task Type */
@@ -1384,6 +1390,8 @@ export interface components {
             resolution_note: string;
             /** Resolved At */
             resolved_at: string | null;
+            /** Resolved By */
+            resolved_by: string | null;
             /** Source */
             source: string;
             /** Status */

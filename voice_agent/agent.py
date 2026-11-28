@@ -285,6 +285,7 @@ async def _score_and_log_call(
     from voice_agent.call_logger import log_call, prompt_health
     from voice_agent.outcome_extractor import extract_outcome
     from workflow import service as workflow
+    from workflow.audit import VOICE_AGENT, acting_as
 
     try:
         items = session.history.items
@@ -328,13 +329,14 @@ async def _score_and_log_call(
         health = await prompt_health(prompt.id)
         logger.info("Prompt %s health: %s", prompt.id, health.reason)
 
-        report = await workflow.record_call_outcome(
-            invoice.invoice_id,
-            outcome,
-            call_log_id=call_log_id,
-            captured=agent.captured,
-            invoice=invoice,
-        )
+        with acting_as(VOICE_AGENT):
+            report = await workflow.record_call_outcome(
+                invoice.invoice_id,
+                outcome,
+                call_log_id=call_log_id,
+                captured=agent.captured,
+                invoice=invoice,
+            )
         logger.info(
             "Workflow: %s is now %s (tier %s), %d task(s) opened, next %s at %s",
             report.invoice_id,

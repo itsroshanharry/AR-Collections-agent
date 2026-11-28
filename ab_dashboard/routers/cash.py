@@ -75,6 +75,7 @@ class TransactionOut(BaseModel):
     customer_id: str | None
     allocations: list[dict]
     resolution_note: str
+    resolved_by: str | None
     received_at: datetime
     resolved_at: datetime | None
 
@@ -122,6 +123,7 @@ def _txn_out(txn: BankTransactionRow) -> TransactionOut:
         customer_id=txn.customer_id,
         allocations=txn.allocations or [],
         resolution_note=txn.resolution_note,
+        resolved_by=txn.resolved_by,
         received_at=txn.received_at,
         resolved_at=txn.resolved_at,
     )

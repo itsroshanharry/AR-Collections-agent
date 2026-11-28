@@ -88,6 +88,7 @@ class ExperimentRow(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # The run's inputs, persisted so any worker can resume it after a restart without
     # the original request body - and so a result can always be reproduced exactly.
@@ -279,6 +280,7 @@ class TaskRow(Base):
     call_log_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     resolution: Mapped[str | None] = mapped_column(String(32), nullable=True)
     resolution_note: Mapped[str] = mapped_column(Text, default="")
+    resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -299,6 +301,9 @@ class InvoiceEventRow(Base):
     to_state: Mapped[str] = mapped_column(String(24))
     tier: Mapped[str] = mapped_column(String(16))
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Who caused it: an API role (operator, admin), the scheduler, the voice agent, or
+    # "system". See workflow/audit.py.
+    actor: Mapped[str] = mapped_column(String(64), default="system", server_default="system")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, index=True
     )
@@ -333,6 +338,7 @@ class BankTransactionRow(Base):
     # [{"invoice_id", "amount", "settles"}] - where the money went.
     allocations: Mapped[list] = mapped_column(JSON, default=list)
     resolution_note: Mapped[str] = mapped_column(Text, default="")
+    resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -37,6 +37,7 @@ from shared.models import AccountItem, CallOutcome, Invoice, RiskTier
 from shared.observability import metrics as m
 from shared.observability.tracing import tracer
 from voice_agent.dunning_logic import amount_in_inr, classify_risk, priority_score
+from workflow import audit
 from workflow.policy import INTRUSIVE_CHANNELS, Channel, DunningPolicy, TaskType, get_policy
 from workflow.scheduler import Attempt, NextAction, as_utc, next_action
 from workflow.state_machine import (
@@ -301,6 +302,7 @@ async def _close_tasks(
                 status="done",
                 resolution=resolution,
                 resolution_note="Closed automatically by the dunning workflow.",
+                resolved_by=audit.WORKFLOW,
                 resolved_at=now,
             )
         )
@@ -340,6 +342,7 @@ async def _apply(
             to_state=row.state,
             tier=row.tier,
             detail={**transition.detail, "tasks_opened": [t.task_type for t in created]},
+            actor=audit.current_actor(),
             created_at=now,
         )
     )
@@ -354,6 +357,7 @@ def _log_event(row: InvoiceStateRow, event: str, from_state: str, now: datetime,
         to_state=row.state,
         tier=row.tier,
         detail=detail,
+        actor=audit.current_actor(),
         created_at=now,
     )
 
@@ -1015,6 +1019,7 @@ async def resolve_task(
         task.status = "done"
         task.resolution = resolution
         task.resolution_note = note
+        task.resolved_by = audit.current_actor()
         task.resolved_at = now
         transition.detail["task_id"] = task.id
         await _apply(session, row, transition, now, except_task_id=task.id)

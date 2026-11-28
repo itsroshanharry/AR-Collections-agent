@@ -23,6 +23,7 @@ from shared.config import get_settings
 from shared.eval.eval_set import EvalSetError, cached_eval_set
 from shared.eval.metrics import injection_held
 from shared.eval.stats import compare
+from workflow import audit
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class ExperimentOut(BaseModel):
     scenario_count: int
     completed_count: int
     error: str | None
+    created_by: str | None
     created_at: datetime
     completed_at: datetime | None
 
@@ -176,6 +178,7 @@ def _experiment_out(row: ExperimentRow) -> ExperimentOut:
         scenario_count=row.scenario_count,
         completed_count=row.completed_count,
         error=row.error,
+        created_by=row.created_by,
         created_at=row.created_at,
         completed_at=row.completed_at,
     )
@@ -215,6 +218,7 @@ async def create_experiment(
         seed=payload.seed,
         scenario_limit=payload.limit,
         status=ExperimentStatus.PENDING,
+        created_by=audit.current_actor(),
     )
     session.add(experiment)
     await session.commit()

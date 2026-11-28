@@ -560,6 +560,10 @@
       },
       "EventOut": {
         "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -593,6 +597,7 @@
           "to_state",
           "tier",
           "detail",
+          "actor",
           "created_at"
         ],
         "title": "EventOut",
@@ -667,6 +672,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
           "error": {
             "anyOf": [
               {
@@ -712,6 +728,7 @@
           "scenario_count",
           "completed_count",
           "error",
+          "created_by",
           "created_at",
           "completed_at"
         ],
@@ -1968,6 +1985,17 @@
             ],
             "title": "Resolved At"
           },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -1992,6 +2020,7 @@
           "payload",
           "resolution",
           "resolution_note",
+          "resolved_by",
           "allowed_resolutions",
           "created_at",
           "resolved_at"
@@ -2167,6 +2196,17 @@
             ],
             "title": "Resolved At"
           },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -2200,6 +2240,7 @@
           "customer_id",
           "allocations",
           "resolution_note",
+          "resolved_by",
           "received_at",
           "resolved_at"
         ],

@@ -54,6 +54,7 @@ class TaskOut(BaseModel):
     payload: dict
     resolution: str | None
     resolution_note: str
+    resolved_by: str | None
     allowed_resolutions: list[str]
     created_at: datetime
     resolved_at: datetime | None
@@ -65,6 +66,7 @@ class EventOut(BaseModel):
     to_state: str
     tier: str
     detail: dict
+    actor: str
     created_at: datetime
 
 
@@ -240,6 +242,7 @@ def _task_out(task: TaskRow) -> TaskOut:
         payload=task.payload or {},
         resolution=task.resolution,
         resolution_note=task.resolution_note,
+        resolved_by=task.resolved_by,
         allowed_resolutions=sorted(RESOLUTIONS[TaskType(task.task_type)]),
         created_at=task.created_at,
         resolved_at=task.resolved_at,
@@ -253,6 +256,7 @@ def _event_out(event: InvoiceEventRow) -> EventOut:
         to_state=event.to_state,
         tier=event.tier,
         detail=event.detail or {},
+        actor=event.actor,
         created_at=event.created_at,
     )
 

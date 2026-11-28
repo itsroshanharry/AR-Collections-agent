@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ab_dashboard.db import BankTransactionRow, InvoiceStateRow, TaskRow, get_sessionmaker
 from shared.observability import metrics as m
 from shared.observability.tracing import tracer
-from workflow import service
+from workflow import audit, service
 from workflow.cash_application import BankLine, MatchResult, OpenItem, match
 from workflow.policy import DunningPolicy, TaskType, get_policy
 from workflow.scheduler import as_utc
@@ -313,6 +313,7 @@ async def apply_manually(
         txn.status = "applied"
         unapplied = Decimal(txn.amount) - total
         txn.resolution_note = note + (f" (unapplied: {unapplied:.2f})" if unapplied else "")
+        txn.resolved_by = audit.current_actor()
         txn.resolved_at = now
         service._on_commit(session, lambda: m.CASH_TRANSACTIONS.labels("applied", "manual").inc())
         return txn
@@ -338,6 +339,7 @@ async def dismiss(txn_id: str, *, note: str, now: datetime | None = None) -> Ban
         txn = await _load_txn(session, txn_id)
         txn.status = "dismissed"
         txn.resolution_note = note
+        txn.resolved_by = audit.current_actor()
         txn.resolved_at = now
         service._on_commit(
             session, lambda: m.CASH_TRANSACTIONS.labels("dismissed", "manual").inc()

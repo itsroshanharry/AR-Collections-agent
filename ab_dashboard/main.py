@@ -33,6 +33,7 @@ from shared.config import REPO_ROOT, get_settings
 from shared.observability import metrics as m
 from shared.observability.logging import configure_logging, request_id_var
 from shared.observability.tracing import setup_tracing, tracer
+from workflow import audit
 from workflow import service as dunning_service
 
 # Settings parses .env itself, but the OpenTelemetry and Langfuse variables are read from
@@ -51,6 +52,7 @@ async def _dunning_loop(interval: float) -> None:
     """The dunning scheduler: lapse promises, send due emails, escalate. Every pass is
     per-invoice transactional and safe to run on several workers at once."""
     state = readiness.scheduler_state
+    audit.set_actor(audit.SCHEDULER)  # this task's audit events are the scheduler's
     while True:
         try:
             report = await dunning_service.tick()
