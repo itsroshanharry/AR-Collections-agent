@@ -53,6 +53,18 @@ notepad .env
 
 **Do not put real keys in `.env.example`** — it is committed. Only `.env` is gitignored.
 
+Check that every key you set actually works:
+
+```bash
+uv run python -m shared.check_keys
+```
+
+Each service gets the smallest real request that proves its key (Groq and Cerebras: list
+models, confirm the configured ones exist, run a one-line completion; Deepgram: list projects;
+LiveKit: list rooms with a signed token; plus Langfuse, the database, and local Ollama/Kokoro if
+running). Unset keys are skipped. It exits non-zero if a configured service fails, and never
+prints key values.
+
 ### Groq quota — plan around this
 
 Free tier is **8,000 tokens/min and 200,000 tokens/day, per model**. One full 18-scenario sweep costs
