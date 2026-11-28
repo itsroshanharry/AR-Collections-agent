@@ -1,0 +1,55 @@
+# The deployed demo, checked from outside the way a visitor sees it: every page loads,
+# nothing errors, and actions are locked. Read-only - it holds no keys, so it cannot
+# change the live data. Catches what CI cannot: a rotated database password, an expired
+# secret, or a deploy that built but does not serve.
+#
+# Daily, and after any push once Render has had time to redeploy (run it by hand then).
+name: Live smoke
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SMOKE_BASE_URL: https://ar-ab-dashboard.onrender.com
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wake the service
+        # A free Render instance sleeps after ~15 idle minutes and takes up to a minute
+        # to start, so wait for readiness before the browser starts timing pages.
+        run: |
+          for i in $(seq 1 24); do
+            if curl -fs -m 10 "$SMOKE_BASE_URL/health/ready"; then echo; exit 0; fi
+            sleep 5
+          done
+          echo "::error::$SMOKE_BASE_URL did not become ready in 2 minutes"
+          exit 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Playwright
+        working-directory: frontend
+        run: |
+          npm ci --no-fund --no-audit
+          npx playwright install --with-deps chromium
+      - name: Visitor smoke test against the live site
+        working-directory: frontend
+        run: npm run smoke
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: live-smoke-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
