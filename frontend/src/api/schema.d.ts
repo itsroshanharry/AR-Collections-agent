@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/admin/demo/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Demo
+         * @description Wipe the workflow and cash application and reload the ledger, putting a demo that
+         *     visitors have clicked through back to a clean start. Prompts and experiment results
+         *     are kept.
+         */
+        post: operations["reset_demo_admin_demo_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -1073,6 +1095,14 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ResetOut */
+        ResetOut: {
+            /** Deleted */
+            deleted: {
+                [key: string]: number;
+            };
+            reloaded: components["schemas"]["SyncReport"] | null;
+        };
         /** ResultsOut */
         ResultsOut: {
             /** Adversarial Held A */
@@ -1549,6 +1579,38 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    reset_demo_admin_demo_reset_post: {
+        parameters: {
+            query?: {
+                /** @description Reload the ledger after wiping */
+                reload?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     me_auth_me_get: {
         parameters: {
             query?: never;

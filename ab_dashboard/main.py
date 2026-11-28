@@ -28,7 +28,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from ab_dashboard import auth, jobs
 from ab_dashboard import health as readiness
 from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
-from ab_dashboard.routers import cash, dunning, experiments, prompts
+from ab_dashboard.routers import admin, cash, dunning, experiments, prompts
 from shared.config import REPO_ROOT, get_settings
 from shared.observability import metrics as m
 from shared.observability.logging import configure_logging, request_id_var
@@ -168,6 +168,7 @@ app.include_router(experiments.router)
 app.include_router(dunning.router)
 app.include_router(dunning.tasks_router)
 app.include_router(cash.router)
+app.include_router(admin.router)
 
 
 @app.get("/health", tags=["meta"])

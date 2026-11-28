@@ -1417,6 +1417,33 @@
         "title": "PromptOut",
         "type": "object"
       },
+      "ResetOut": {
+        "properties": {
+          "deleted": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Deleted",
+            "type": "object"
+          },
+          "reloaded": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "deleted",
+          "reloaded"
+        ],
+        "title": "ResetOut",
+        "type": "object"
+      },
       "ResultsOut": {
         "properties": {
           "adversarial_held_a": {
@@ -2558,6 +2585,52 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/demo/reset": {
+      "post": {
+        "description": "Wipe the workflow and cash application and reload the ledger, putting a demo that\nvisitors have clicked through back to a clean start. Prompts and experiment results\nare kept.",
+        "operationId": "reset_demo_admin_demo_reset_post",
+        "parameters": [
+          {
+            "description": "Reload the ledger after wiping",
+            "in": "query",
+            "name": "reload",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Reload the ledger after wiping",
+              "title": "Reload",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Demo",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/auth/me": {
       "get": {
         "description": "Who the API thinks you are. A wrong key is a 401, so this also checks a key.",

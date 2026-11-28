@@ -156,3 +156,35 @@ class TestApi:
 def test_cors_is_off_unless_origins_are_listed(client) -> None:
     r = client.get("/health", headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in r.headers
+
+
+class TestDemoReset:
+    def test_reset_needs_admin_and_restores_a_clean_book(self, client) -> None:
+        client.post("/dunning/sync", headers=OP)
+        [task] = client.get("/tasks", params={"invoice_id": "INV-M"}).json()
+        client.patch(f"/tasks/{task['id']}", json={"resolution": "rejected"}, headers=OP)
+        client.post(
+            "/cash/transactions",
+            json=[
+                {"utr": "U1", "value_date": "2026-11-24", "amount": "50000", "reference": "INV-2"}
+            ],
+            headers=OP,
+        )
+
+        assert client.post("/admin/demo/reset", headers=OP).status_code == 403
+        body = client.post("/admin/demo/reset", headers=ADMIN).json()
+        assert body["deleted"]["invoice_states"] == 2
+        assert body["deleted"]["bank_transactions"] == 1
+        assert body["reloaded"]["created"] == 2
+
+        # Back to how the ledger arrives: the dispute task is open again, no cash.
+        [fresh] = client.get("/tasks", params={"invoice_id": "INV-M"}).json()
+        assert fresh["status"] == "open"
+        assert client.get("/cash/transactions").json() == []
+        assert client.get("/dunning/invoices/INV-2").json()["state"]["state"] != "closed"
+
+    def test_reset_without_reload_leaves_it_empty(self, client) -> None:
+        client.post("/dunning/sync", headers=OP)
+        body = client.post("/admin/demo/reset", params={"reload": False}, headers=ADMIN).json()
+        assert body["reloaded"] is None
+        assert client.get("/dunning/summary").json()["invoices"] == 0
