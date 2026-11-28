@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "gen:api": "openapi-typescript openapi.json -o src/api/schema.d.ts"
+    "gen:api": "openapi-typescript openapi.json -o src/api/schema.d.ts",
+    "smoke": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "5.81.5",
@@ -18,6 +19,7 @@
     "react-router-dom": "6.30.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.0",
     "@tailwindcss/vite": "4.1.11",
     "@types/react": "18.3.23",
     "@types/react-dom": "18.3.7",

@@ -87,14 +87,22 @@ jobs:
       - run: npm run build
 
   docker:
+    # Builds the image that Render deploys, boots it locked down the way Render runs it,
+    # then drives the console in a real browser against it.
     runs-on: ubuntu-latest
+    env:
+      SMOKE_OPERATOR_KEY: ci-operator-key
+      SMOKE_ADMIN_KEY: ci-admin-key
     steps:
       - uses: actions/checkout@v7
       - name: Build the dashboard image
         run: docker build -f infra/Dockerfile.dashboard -t ar-dashboard:ci .
       - name: Start it and check readiness
         run: |
-          docker run -d --name app -p 8000:8000 -e DUNNING_TICK_SECONDS=0 ar-dashboard:ci
+          docker run -d --name app -p 8000:8000 \
+            -e DUNNING_TICK_SECONDS=0 -e PUBLIC_ROLE=viewer \
+            -e OPERATOR_API_KEY=$SMOKE_OPERATOR_KEY -e ADMIN_API_KEY=$SMOKE_ADMIN_KEY \
+            ar-dashboard:ci
           for i in $(seq 1 30); do
             if curl -fs localhost:8000/health/ready; then
               echo
@@ -106,6 +114,30 @@ jobs:
           done
           docker logs app
           exit 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Playwright
+        working-directory: frontend
+        run: |
+          npm ci --no-fund --no-audit
+          npx playwright install --with-deps chromium
+      - name: Browser smoke test (visitor, operator, admin)
+        working-directory: frontend
+        run: npm run smoke
+      - name: Server logs
+        if: failure()
+        run: docker logs app
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
 
   eval-smoke:
     # Spends real LLM tokens (~10K), so only on main and manual runs, never on PRs from
