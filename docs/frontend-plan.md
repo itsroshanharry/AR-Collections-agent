@@ -86,8 +86,8 @@ Planned as its own milestone before the public deploy (README roadmap). The fron
 - **Cold starts:** the free instance sleeps after about 15 minutes idle and takes 30 to 60 seconds
   to wake. Open the URL a minute before an interview. A scheduled ping could keep it awake, but it
   is not needed for occasional demos.
-- CI already builds the image and boots it; it will also build the frontend, and a Playwright smoke
-  test can load each page against the booted container.
+- CI builds the image, boots it with access control on, and runs the Playwright smoke tests
+  against it; `live-smoke.yml` runs the read-only visitor test against the deploy daily.
 
 ## Order of work
 
@@ -96,7 +96,7 @@ Planned as its own milestone before the public deploy (README roadmap). The fron
 | 1 ✅ | Scaffold (Vite, Tailwind, generated client, routing), static serving, `GET /dunning/summary`, `GET /dunning/customers`, Docker build stage. Pages: Overview, Call queue, Customers, Customer account, Invoice, Work queues, Cash application. Recharts was dropped: CSS bars cover the overview, and Recharts 2 is no longer maintained. | done |
 | 2 ✅ | Experiments pages: prompt list, start a run, live progress, results, and a scenario drill-down (both transcripts side by side, judge scores and reasons, made-up figures highlighted) backed by a new `GET /experiments/{id}/scenarios/{scenario_id}`. | done |
 | 3 ✅ | Authentication (backend keys and roles, frontend sign-in and role switcher), demo reset, CORS allow-list, and the actor on every audit event. The role switcher only lowers a role (`X-Act-As`), so it needs no extra keys and cannot be used to gain access. | done |
-| 4 | Deploy to Render with Neon; Playwright smoke test in CI. | half a day |
+| 4 ✅ | Deploy to Render with Neon (live at <https://ar-ab-dashboard.onrender.com/app/>). Playwright smoke tests ([`frontend/e2e`](../frontend/e2e/smoke.spec.ts)) drive the booted Docker image in CI as visitor, operator and admin, and a daily workflow runs the visitor test against the live site. | done |
 | 5 | Demo call with a streamed transcript (SSE) and time-to-first-token. | 1 to 2 days |
 
 Phases 1 to 4 give a public, safe, clickable demo. Phase 5 is the part that makes it memorable.

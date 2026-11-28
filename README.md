@@ -1,6 +1,10 @@
 # AR Collections Voice Agent + Prompt A/B Testing Dashboard
 
 [![CI](https://github.com/itsroshanharry/AR-Collections-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/itsroshanharry/AR-Collections-agent/actions/workflows/ci.yml)
+[![Live smoke](https://github.com/itsroshanharry/AR-Collections-agent/actions/workflows/live-smoke.yml/badge.svg)](https://github.com/itsroshanharry/AR-Collections-agent/actions/workflows/live-smoke.yml)
+
+**Live demo: <https://ar-ab-dashboard.onrender.com/app/>**. Read-only for visitors; it runs on a
+free instance that sleeps when idle, so the first load can take up to a minute.
 
 Two connected deliverables for agentic AI in finance back-office automation:
 
@@ -148,6 +152,13 @@ operator or a visitor sees. Every audit event, task resolution and bank decision
 it: an API role, `scheduler`, `voice-agent` or `system`. CORS is off unless `CORS_ALLOW_ORIGINS`
 lists origins; the console is served from the API's own origin and needs none.
 
+**Deployment.** One Render web service from [`infra/render.yaml`](infra/render.yaml) (Docker:
+the console is built in the image and served by the API) and a free **Neon** Postgres as
+`DATABASE_URL`; migrations run on startup. Render generates both API keys and visitors are pinned
+to viewer, so the public deploy is look-but-don't-touch. The voice agent stays off it (its audio
+stack does not fit a 512MB instance); run it locally with `DATABASE_URL` pointed at Neon and its
+calls land on the live console. Steps in [SETUP.md](SETUP.md#9-deploy-optional).
+
 ### 1. The A/B dashboard
 
 ```bash
@@ -280,7 +291,7 @@ workflow/          dunning policy YAML, contact scheduler, state machine, workfl
 ab_dashboard/      FastAPI app, models + Alembic migrations, experiment runner, durable jobs, routers
 frontend/          operator console: React + TypeScript + Vite, typed client generated from OpenAPI
 infra/             Dockerfile, Render blueprint, Kokoro TTS, monitoring stack (Prometheus, Grafana, Jaeger)
-tests/             466 tests, no network calls
+tests/             490 tests, no network calls
 ```
 
 ## Data provenance
@@ -339,7 +350,7 @@ uv run python -m voice_agent.agent --simulate \
 ## Tests
 
 ```bash
-uv run pytest                    # 466 tests, fully mocked, no API calls
+uv run pytest                    # 490 tests, fully mocked, no API calls
 uv run ruff check .
 ```
 
@@ -359,7 +370,12 @@ TEST_POSTGRES_URL=postgresql://user:pass@localhost:5432/scratch uv run pytest
 ```
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint, the suite on both SQLite and
-Postgres, and a build-and-boot of the Docker image on every push and pull request. On `main` it also
+Postgres, the console's type check and build, and a build-and-boot of the Docker image on every
+push and pull request. The booted image is then driven in a real browser
+([Playwright](frontend/e2e/smoke.spec.ts)) with access control on, as visitor, operator and admin:
+every page renders with no console or server errors, actions are locked for a visitor, and an
+operator can load and work the ledger. [`live-smoke.yml`](.github/workflows/live-smoke.yml) runs
+the visitor half against the live deploy every day. On `main` CI also
 runs three live scenarios through the quality gate, and
 [`eval-weekly.yml`](.github/workflows/eval-weekly.yml) runs the full sweep every Monday to catch
 provider-side model drift. Both live runs need a `GROQ_API_KEY` repository secret.
@@ -372,6 +388,6 @@ provider-side model drift. Both live runs need a `GROQ_API_KEY` repository secre
    plugin. `voice_factory.py` is structured to take it as a third branch.
 2. **Streaming.** Time-to-first-token per turn in the simulator, so the concise prompt's latency
    claim is measured rather than assumed, and live experiment progress over SSE.
-3. **Console, phases 4 and 5.** Deployment to Render with Neon and a browser smoke test in CI, then a
-   live demo call with a streamed transcript: see [docs/frontend-plan.md](docs/frontend-plan.md).
+3. **Console, phase 5.** A live demo call with a streamed transcript: see
+   [docs/frontend-plan.md](docs/frontend-plan.md).
 4. Payment-date risk model feeding the dunning prioritisation.

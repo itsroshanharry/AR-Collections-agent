@@ -194,6 +194,20 @@ uv run pytest -q          # ~490 tests, fully mocked, no network
 uv run ruff check .
 ```
 
+Browser smoke tests (Playwright) drive the built console against a running server. Start one with
+access control on, then:
+
+```powershell
+cd frontend; npx playwright install chromium     # once
+$env:SMOKE_BASE_URL = "http://127.0.0.1:8000"
+$env:SMOKE_OPERATOR_KEY = "<the server's OPERATOR_API_KEY>"; $env:SMOKE_ADMIN_KEY = "<its ADMIN_API_KEY>"
+npm run smoke
+```
+
+Without the two keys only the read-only visitor test runs, which is the one safe to point at the
+live deploy (`SMOKE_BASE_URL=https://ar-ab-dashboard.onrender.com`). The signed-in tests change
+data, including a demo reset, so never give them the live keys.
+
 CI also runs the whole suite against a real Postgres. To do that yourself, set
 `TEST_POSTGRES_URL` to a **throwaway** database: every test drops and recreates its `public`
 schema, so never point it at the Neon database the deployed demo uses.
@@ -220,9 +234,29 @@ docker build -f infra/Dockerfile.dashboard -t ar-dashboard .
 docker run -p 8000:8000 --env-file .env ar-dashboard
 ```
 
-Render: point a Blueprint at [`infra/render.yaml`](infra/render.yaml). Set `DATABASE_URL` to a **Neon**
-connection string — Render's own free Postgres is deleted 30 days after creation. Free web services
-also spin down after ~15 min idle with a 30–60s cold start, so warm it before a live demo.
+Render builds that same image from the repo on every push to `main`; nothing is pushed to a
+registry. Use **Neon** for the database: Render's own free Postgres is deleted 30 days after
+creation. Free web services also spin down after ~15 min idle with a 30–60s cold start, so warm it
+before a live demo.
+
+### Render
+
+1. Create the Neon database first (below) and keep its connection string to hand.
+2. [render.com](https://render.com) → sign in with GitHub → **New → Blueprint** → pick this repo.
+   Set **Blueprint Path** to `infra/render.yaml` (it is not at the repo root, and Render will say
+   "render.yaml not found" otherwise).
+3. It proposes one free web service, `ar-ab-dashboard`, and asks for three values: `DATABASE_URL`
+   (the Neon string), `GROQ_API_KEY`, and `CEREBRAS_API_KEY` (leave blank if you have none).
+   **Deploy Blueprint**; the first build takes 5–10 minutes.
+4. Service → **Environment** shows the generated `OPERATOR_API_KEY` and `ADMIN_API_KEY`. Paste the
+   admin key into the console's **Sign in**.
+5. Give it data: **Load ledger** on Overview and **Sync from agent** on Prompt experiments (no
+   tokens), then one 3-scenario experiment (~50K Groq tokens) so the experiment pages have results.
+   Sign out to see what a visitor sees.
+
+`/health/ready` reports the database, the schema version and the scheduler. The **Live smoke**
+workflow checks the deploy as a visitor every day; run it by hand after a push once Render has
+redeployed.
 
 ### Neon
 
