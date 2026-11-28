@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 import { ApiError } from "../api/client";
+import { useAuth, type Role } from "../lib/auth";
 import { label } from "../lib/format";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
@@ -136,6 +137,45 @@ export function StateBadge({ state }: { state: string }) {
 }
 
 export function Button({
+  variant = "secondary",
+  busy,
+  need,
+  children,
+  className,
+  disabled,
+  title,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  busy?: boolean;
+  /** The role this action needs. Below it, the button is disabled and says why. */
+  need?: Role;
+}) {
+  const { can } = useAuth();
+  const blocked = need !== undefined && !can(need);
+  const button = (
+    <ButtonBase
+      {...rest}
+      variant={variant}
+      busy={busy}
+      className={className}
+      disabled={disabled || blocked}
+      title={blocked ? undefined : title}
+    >
+      {children}
+    </ButtonBase>
+  );
+  if (!blocked) return button;
+  // A disabled button gets no pointer events in some browsers, so the explanation sits
+  // on a wrapper.
+  return (
+    <span className="inline-flex" title={`Needs the ${need} role. Sign in from the sidebar.`}>
+      {button}
+    </span>
+  );
+}
+
+function ButtonBase({
   variant = "secondary",
   busy,
   children,

@@ -56,7 +56,7 @@ export function Experiments() {
           title="Prompt versions"
           flush
           action={
-            <Button busy={sync.isPending} onClick={() => sync.mutate(undefined)}>
+            <Button need="operator" busy={sync.isPending} onClick={() => sync.mutate(undefined)}>
               Sync from agent
             </Button>
           }
@@ -232,7 +232,7 @@ function NewRun({ prompts }: { prompts: Schemas["PromptOut"][] }) {
           About {minutes} minutes on Groq&apos;s free tier, which is paced to 8,000 tokens a minute. You
           can leave this page; the run carries on in the background and survives a server restart.
         </p>
-        <Button variant="primary" type="submit" busy={start.isPending} disabled={!a || !b || same}>
+        <Button need="admin" variant="primary" type="submit" busy={start.isPending} disabled={!a || !b || same}>
           Start experiment
         </Button>
       </form>

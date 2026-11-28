@@ -15,6 +15,9 @@ const TEAMS = [
   { id: "qa", name: "Call QA" },
 ];
 
+/** Giving up on collecting the money needs an admin (the API enforces the same rule). */
+const ADMIN_RESOLUTIONS = new Set(["write_off", "legal"]);
+
 /** What a resolution does to the invoice, so the person clicking knows. */
 const EFFECT: Record<string, string> = {
   received: "closes it as paid",
@@ -138,6 +141,7 @@ function TaskItem({ task }: { task: Schemas["TaskOut"] }) {
             {task.allowed_resolutions.map((r) => (
               <Button
                 key={r}
+                need={ADMIN_RESOLUTIONS.has(r) ? "admin" : "operator"}
                 title={EFFECT[r] ? `${label(r)}: ${EFFECT[r]}` : label(r)}
                 busy={resolve.isPending && resolve.variables === r}
                 disabled={resolve.isPending}
@@ -150,6 +154,7 @@ function TaskItem({ task }: { task: Schemas["TaskOut"] }) {
         ) : (
           <div className="text-right text-xs text-muted">
             <StateBadge state={task.status} /> {label(task.resolution)}
+            {task.resolved_by && <div className="mt-1">by {task.resolved_by}</div>}
             {task.resolution_note && <div className="mt-1">“{task.resolution_note}”</div>}
           </div>
         )}

@@ -6,6 +6,22 @@ import type { components, paths } from "./schema";
  *  OpenAPI schema (npm run gen:api), so a changed API fails `tsc`, not a demo. */
 export const api = createClient<paths>({ baseUrl: "" });
 
+/** The signed-in key and any lower role to act as (see lib/auth.tsx). Module state, so
+ *  the one shared client sends them on every request. */
+let credentials: { key: string | null; actAs: string | null } = { key: null, actAs: null };
+
+export function setCredentials(key: string | null, actAs: string | null): void {
+  credentials = { key, actAs };
+}
+
+api.use({
+  onRequest({ request }) {
+    if (credentials.key) request.headers.set("X-API-Key", credentials.key);
+    if (credentials.actAs) request.headers.set("X-Act-As", credentials.actAs);
+    return request;
+  },
+});
+
 export type Schemas = components["schemas"];
 
 export class ApiError extends Error {

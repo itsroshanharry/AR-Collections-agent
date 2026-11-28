@@ -25,7 +25,7 @@ export function CallQueue() {
         title="Call queue"
         subtitle="One call per customer, about their most urgent invoice and covering the rest of the account. Only calls the cadence wants and the contact rules allow right now are listed."
         actions={
-          <Button busy={tick.isPending} onClick={() => tick.mutate(undefined)}>
+          <Button need="operator" busy={tick.isPending} onClick={() => tick.mutate(undefined)}>
             Run scheduler pass
           </Button>
         }
@@ -93,7 +93,7 @@ export function CallQueue() {
                     </Td>
                     <Td right>{call.priority.toFixed(0)}</Td>
                     <Td right>
-                      <Button variant="ghost" onClick={() => setOpen(open === call.invoice_id ? null : call.invoice_id)}>
+                      <Button need="operator" variant="ghost" onClick={() => setOpen(open === call.invoice_id ? null : call.invoice_id)}>
                         {open === call.invoice_id ? "Close" : "Record outcome"}
                       </Button>
                     </Td>

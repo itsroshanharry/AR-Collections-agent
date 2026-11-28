@@ -70,7 +70,12 @@ export function TransactionsTable({
             {!compact && (
               <Td className="max-w-xs text-xs text-muted">
                 {t.reason}
-                {t.resolution_note && <div className="mt-1 text-ink">Note: {t.resolution_note}</div>}
+                {t.resolution_note && (
+                  <div className="mt-1 text-ink">
+                    Note: {t.resolution_note}
+                    {t.resolved_by && <span className="text-muted"> (by {t.resolved_by})</span>}
+                  </div>
+                )}
                 {t.status === "unmatched" && t.customer_id && (
                   <div className="mt-1">
                     Likely customer:{" "}

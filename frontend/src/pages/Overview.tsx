@@ -38,6 +38,15 @@ export function Overview() {
     },
   );
 
+  const reset = useAction(async () => unwrap(await api.POST("/admin/demo/reset", {})), {
+    success: (r) => `Demo reset: ${r.reloaded?.created ?? 0} invoices reloaded, all activity cleared.`,
+  });
+  const confirmReset = () => {
+    if (window.confirm("Wipe every outcome, payment, task and bank transaction, and reload the ledger?")) {
+      reset.mutate(undefined);
+    }
+  };
+
   if (isLoading) return <Loading what="Loading the book" />;
   if (error || !data) return <ErrorNote error={error} />;
 
@@ -55,7 +64,7 @@ export function Overview() {
         <Card>
           <Empty>
             <p className="mb-4">The workflow is empty. Load the demo ledger of overdue invoices to begin.</p>
-            <Button variant="primary" busy={sync.isPending} onClick={() => sync.mutate(undefined)}>
+            <Button need="operator" variant="primary" busy={sync.isPending} onClick={() => sync.mutate(undefined)}>
               Load ledger
             </Button>
           </Empty>
@@ -71,10 +80,13 @@ export function Overview() {
         subtitle="The book of overdue invoices, what the dunning workflow is doing with it, and the work left for people."
         actions={
           <>
-            <Button busy={tick.isPending} onClick={() => tick.mutate(undefined)}>
+            <Button need="admin" variant="ghost" busy={reset.isPending} onClick={confirmReset}>
+              Reset demo
+            </Button>
+            <Button need="operator" busy={tick.isPending} onClick={() => tick.mutate(undefined)}>
               Run scheduler pass
             </Button>
-            <Button variant="primary" busy={feed.isPending} onClick={() => feed.mutate(undefined)}>
+            <Button need="operator" variant="primary" busy={feed.isPending} onClick={() => feed.mutate(undefined)}>
               Simulate bank feed
             </Button>
           </>

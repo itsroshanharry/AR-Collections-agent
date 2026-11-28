@@ -68,11 +68,13 @@ export function Invoice() {
         actions={
           !closed && (
             <>
-              <Button busy={dnc.isPending} onClick={() => dnc.mutate(!s.do_not_call)}>
+              <Button need="operator" busy={dnc.isPending} onClick={() => dnc.mutate(!s.do_not_call)}>
                 {s.do_not_call ? "Allow calls" : "Do not call"}
               </Button>
-              <Button onClick={() => setPanel(panel === "payment" ? null : "payment")}>Post payment</Button>
-              <Button variant="primary" onClick={() => setPanel(panel === "outcome" ? null : "outcome")}>
+              <Button need="operator" onClick={() => setPanel(panel === "payment" ? null : "payment")}>
+                Post payment
+              </Button>
+              <Button need="operator" variant="primary" onClick={() => setPanel(panel === "outcome" ? null : "outcome")}>
                 Record call outcome
               </Button>
             </>
@@ -197,7 +199,9 @@ function TimelineItem({ event }: { event: Schemas["EventOut"] }) {
     <li className="px-4 py-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{label(event.event)}</span>
-        <span className="text-xs text-muted">{dateTime(event.created_at)}</span>
+        <span className="text-xs text-muted">
+          {dateTime(event.created_at)} · <span title="Who caused this">{event.actor}</span>
+        </span>
       </div>
       {changed && (
         <div className="mt-1 flex items-center gap-1 text-xs">
@@ -255,7 +259,7 @@ function PaymentForm({ state, onDone }: { state: Schemas["InvoiceStateOut"]; onD
       <Field label="Reference">
         <input className={inputClass} value={reference} onChange={(e) => setReference(e.target.value)} />
       </Field>
-      <Button variant="primary" type="submit" busy={pay.isPending}>
+      <Button need="operator" variant="primary" type="submit" busy={pay.isPending}>
         Post payment
       </Button>
       <p className="w-full text-xs text-muted">

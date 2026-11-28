@@ -132,6 +132,22 @@ are generated from the API's OpenAPI schema (`uv run python -m ab_dashboard.expo
 
 Everything below can also be driven from <http://127.0.0.1:8000/docs>.
 
+**Access control.** With no keys configured, everything is open, which is what you want on your
+own machine. Set `OPERATOR_API_KEY` and `ADMIN_API_KEY` (and `PUBLIC_ROLE=viewer`) before exposing
+it, and visitors can look at everything but act on nothing:
+
+| Role | Can |
+|---|---|
+| viewer | read every page and endpoint |
+| operator | work the book: record outcomes and payments, resolve tasks, run the scheduler, apply or dismiss bank exceptions, sync prompts |
+| admin | also write a debt off or send it to legal, start an experiment (it spends LLM budget), register a prompt, and reset the demo (`POST /admin/demo/reset`) |
+
+Keys go in the `X-API-Key` header (the console's **Sign in** stores one in the browser). A signed-in
+user can switch to a lower role with `X-Act-As` (the console's "Acting as" menu) to show what an
+operator or a visitor sees. Every audit event, task resolution and bank decision records who did
+it: an API role, `scheduler`, `voice-agent` or `system`. CORS is off unless `CORS_ALLOW_ORIGINS`
+lists origins; the console is served from the API's own origin and needs none.
+
 ### 1. The A/B dashboard
 
 ```bash
@@ -356,8 +372,6 @@ provider-side model drift. Both live runs need a `GROQ_API_KEY` repository secre
    plugin. `voice_factory.py` is structured to take it as a third branch.
 2. **Streaming.** Time-to-first-token per turn in the simulator, so the concise prompt's latency
    claim is measured rather than assumed, and live experiment progress over SSE.
-3. **Console, phases 2 to 5.** Experiment pages, authentication, deployment to Render with Neon,
-   and a live demo call with a streamed transcript: see [docs/frontend-plan.md](docs/frontend-plan.md).
-4. **API authentication** (role-scoped keys, a read-only public demo) and a CORS allow-list in
-   place of `*`.
-5. Payment-date risk model feeding the dunning prioritisation.
+3. **Console, phases 4 and 5.** Deployment to Render with Neon and a browser smoke test in CI, then a
+   live demo call with a streamed transcript: see [docs/frontend-plan.md](docs/frontend-plan.md).
+4. Payment-date risk model feeding the dunning prioritisation.

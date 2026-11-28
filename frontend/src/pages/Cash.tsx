@@ -91,10 +91,10 @@ export function Cash() {
               className="hidden"
               onChange={(e) => onFile(e.target.files?.[0])}
             />
-            <Button busy={upload.isPending} onClick={() => fileInput.current?.click()}>
+            <Button need="operator" busy={upload.isPending} onClick={() => fileInput.current?.click()}>
               Upload statement CSV
             </Button>
-            <Button variant="primary" busy={simulate.isPending} onClick={() => simulate.mutate(undefined)}>
+            <Button need="operator" variant="primary" busy={simulate.isPending} onClick={() => simulate.mutate(undefined)}>
               Simulate bank feed
             </Button>
           </>
@@ -229,8 +229,8 @@ function ExceptionItem({ txn }: { txn: Txn }) {
           )}
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => setMode(mode === "apply" ? null : "apply")}>Apply</Button>
-          <Button variant="danger" onClick={() => setMode(mode === "dismiss" ? null : "dismiss")}>
+          <Button need="operator" onClick={() => setMode(mode === "apply" ? null : "apply")}>Apply</Button>
+          <Button need="operator" variant="danger" onClick={() => setMode(mode === "dismiss" ? null : "dismiss")}>
             Dismiss
           </Button>
         </div>
@@ -294,7 +294,7 @@ function ApplyForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
       <Field label="Note">
         <input className={inputClass} placeholder="e.g. refund the excess" value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
-      <Button variant="primary" type="submit" busy={apply.isPending}>
+      <Button need="operator" variant="primary" type="submit" busy={apply.isPending}>
         Apply payment
       </Button>
       <p className="w-full text-xs text-muted">Anything not allocated stays recorded on the credit, for a refund.</p>
@@ -326,7 +326,7 @@ function DismissForm({ txn, onDone }: { txn: Txn; onDone: () => void }) {
           onChange={(e) => setNote(e.target.value)}
         />
       </Field>
-      <Button variant="danger" type="submit" busy={dismiss.isPending}>
+      <Button need="operator" variant="danger" type="submit" busy={dismiss.isPending}>
         Dismiss
       </Button>
     </form>

@@ -107,7 +107,7 @@ export function OutcomeForm({
         </label>
       )}
       <div className="sm:col-span-2 lg:col-span-3">
-        <Button variant="primary" type="submit" busy={record.isPending}>
+        <Button need="operator" variant="primary" type="submit" busy={record.isPending}>
           Record outcome
         </Button>
       </div>

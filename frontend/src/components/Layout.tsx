@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { api } from "../api/client";
+import { AccessPanel, ReadOnlyNotice } from "./Access";
 import { cx } from "./ui";
 
 const NAV = [
@@ -27,8 +28,9 @@ export function Layout() {
               <div className="text-xs text-muted">Operator console</div>
             </div>
           </div>
-          <div className="md:mt-4">
+          <div className="flex flex-col items-end gap-1.5 md:mt-4 md:items-start">
             <HealthBadge />
+            <AccessPanel />
           </div>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:px-3">
@@ -57,6 +59,7 @@ export function Layout() {
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 md:px-8">
         <div className="mx-auto max-w-6xl">
+          <ReadOnlyNotice />
           <Outlet />
         </div>
       </main>

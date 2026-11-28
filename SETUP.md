@@ -50,6 +50,7 @@ notepad .env
 | `DEEPGRAM_API_KEY` | [console.deepgram.com](https://console.deepgram.com) → API Keys | Voice with `VOICE_PROVIDER=cloud` | $200 credit, no card |
 | `LIVEKIT_URL` / `_API_KEY` / `_API_SECRET` | [cloud.livekit.io](https://cloud.livekit.io) → project → Settings → Keys | Browser voice only | Free, no card |
 | `DATABASE_URL` | [neon.tech](https://neon.tech) | Deployment only | Free, always-on |
+| `OPERATOR_API_KEY` / `ADMIN_API_KEY` | Any long random string you make up | Locking a deployed demo (open locally without them) | — |
 
 **Do not put real keys in `.env.example`** — it is committed. Only `.env` is gitignored.
 

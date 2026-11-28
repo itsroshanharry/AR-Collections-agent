@@ -5,6 +5,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import { Layout } from "./components/Layout";
 import { ToastProvider } from "./components/toast";
+import { AuthProvider } from "./lib/auth";
 import "./index.css";
 import { CallQueue } from "./pages/CallQueue";
 import { Cash } from "./pages/Cash";
@@ -28,6 +29,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
+        <AuthProvider>
         <BrowserRouter basename="/app">
           <Routes>
             <Route element={<Layout />}>
@@ -45,6 +47,7 @@ createRoot(document.getElementById("root")!).render(
             </Route>
           </Routes>
         </BrowserRouter>
+        </AuthProvider>
       </ToastProvider>
     </QueryClientProvider>
   </StrictMode>,
