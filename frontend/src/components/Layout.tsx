@@ -10,6 +10,7 @@ const NAV = [
   { to: "/customers", label: "Customers" },
   { to: "/tasks", label: "Work queues" },
   { to: "/cash", label: "Cash application" },
+  { to: "/experiments", label: "Prompt experiments" },
 ];
 
 export function Layout() {

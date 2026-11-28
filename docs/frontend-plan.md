@@ -94,7 +94,7 @@ Planned as its own milestone before the public deploy (README roadmap). The fron
 | Phase | Scope | Rough size |
 |---|---|---|
 | 1 ✅ | Scaffold (Vite, Tailwind, generated client, routing), static serving, `GET /dunning/summary`, `GET /dunning/customers`, Docker build stage. Pages: Overview, Call queue, Customers, Customer account, Invoice, Work queues, Cash application. Recharts was dropped: CSS bars cover the overview, and Recharts 2 is no longer maintained. | done |
-| 2 | Experiments pages: prompt list, start a run, live progress, results. | 1 day |
+| 2 ✅ | Experiments pages: prompt list, start a run, live progress, results, and a scenario drill-down (both transcripts side by side, judge scores and reasons, made-up figures highlighted) backed by a new `GET /experiments/{id}/scenarios/{scenario_id}`. | done |
 | 3 | Authentication (backend keys and roles, frontend sign-in and role switcher), demo reset, CORS allow-list. | 1 day |
 | 4 | Deploy to Render with Neon; Playwright smoke test in CI. | half a day |
 | 5 | Demo call with a streamed transcript (SSE) and time-to-first-token. | 1 to 2 days |

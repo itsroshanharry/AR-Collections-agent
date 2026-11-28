@@ -125,6 +125,10 @@ const STATE_TONE: Record<string, Tone> = {
   duplicate: "neutral",
   open: "accent",
   done: "good",
+  pending: "neutral",
+  running: "accent",
+  completed: "good",
+  failed: "bad",
 };
 
 export function StateBadge({ state }: { state: string }) {

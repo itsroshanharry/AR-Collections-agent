@@ -123,8 +123,9 @@ uv run uvicorn ab_dashboard.main:app --reload     # then open http://127.0.0.1:8
 ```
 
 A React + TypeScript console served by the API itself at `/app`: the overview of the book, the
-per-customer call queue, customer accounts, invoice timelines, team work queues and cash
-application. Click **Load ledger**, then **Run scheduler pass** and **Simulate bank feed**. For
+per-customer call queue, customer accounts, invoice timelines, team work queues, cash application
+and prompt experiments (start an A/B run, watch it progress, read the verdict, and open any
+scenario to see both transcripts side by side with the judges' reasons). Click **Load ledger**, then **Run scheduler pass** and **Simulate bank feed**. For
 frontend development, `npm run dev` serves it on :5173 with API calls proxied to :8000. Its types
 are generated from the API's OpenAPI schema (`uv run python -m ab_dashboard.export_openapi`, then
 `npm run gen:api`), and CI fails if the two drift apart.
@@ -137,7 +138,7 @@ Everything below can also be driven from <http://127.0.0.1:8000/docs>.
 uv run uvicorn ab_dashboard.main:app --reload
 ```
 
-Drive it from <http://127.0.0.1:8000/docs> (the console's experiment pages are next):
+Use the console's **Prompt experiments** page, or drive it from <http://127.0.0.1:8000/docs>:
 
 | Step | Call |
 |---|---|
@@ -145,8 +146,11 @@ Drive it from <http://127.0.0.1:8000/docs> (the console's experiment pages are n
 | 2 | `POST /experiments` — `{"variant_a_id": "collections_formal_v1", "variant_b_id": "collections_friendly_v2"}` |
 | 3 | `GET /experiments/{id}` — poll until `status` is `completed` (`completed_count` advances per scenario) |
 | 4 | `GET /experiments/{id}/results` — win-rate, latency, hallucination-rate, per-scenario breakdown |
+| 5 | `GET /experiments/{id}/scenarios/{scenario_id}` — both transcripts, every judge score with its rationale, and the head-to-head judge's reason |
 
-Add `{"limit": 3}` to `POST /experiments` for a fast smoke run instead of all 28 scenarios.
+Add `{"limit": 3}` to `POST /experiments` for a fast smoke run instead of all 28 scenarios. On
+Groq's free tier a scenario takes about two minutes (requests are paced to 8,000 tokens a
+minute), so the full set takes about an hour.
 
 Runs are durable. Each scenario's results are committed as soon as it finishes, so `/results` is
 readable mid-run. If the process restarts, the run resumes from the last stored scenario rather than
@@ -260,7 +264,7 @@ workflow/          dunning policy YAML, contact scheduler, state machine, workfl
 ab_dashboard/      FastAPI app, models + Alembic migrations, experiment runner, durable jobs, routers
 frontend/          operator console: React + TypeScript + Vite, typed client generated from OpenAPI
 infra/             Dockerfile, Render blueprint, Kokoro TTS, monitoring stack (Prometheus, Grafana, Jaeger)
-tests/             452 tests, no network calls
+tests/             466 tests, no network calls
 ```
 
 ## Data provenance
@@ -319,7 +323,7 @@ uv run python -m voice_agent.agent --simulate \
 ## Tests
 
 ```bash
-uv run pytest                    # 452 tests, fully mocked, no API calls
+uv run pytest                    # 466 tests, fully mocked, no API calls
 uv run ruff check .
 ```
 
