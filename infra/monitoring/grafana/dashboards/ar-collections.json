@@ -82,7 +82,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
       }
@@ -145,7 +145,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
       }
@@ -204,7 +204,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
       }
@@ -271,7 +271,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
       }
@@ -280,7 +280,7 @@
       "type": "stat",
       "title": "Hallucination rate (24h)",
       "id": 6,
-      "description": "Share of scored calls in which the agent stated a figure absent from the invoice.",
+      "description": "Share of scored calls, A/B experiment calls included, in which the agent stated a figure absent from the invoice. The alert counts real calls only.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -338,7 +338,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
       }
@@ -671,7 +671,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
       }
@@ -734,7 +734,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
       }
@@ -830,8 +830,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (increase(collections_calls_total[1h]))",
-          "legendFormat": "{{outcome}}",
+          "expr": "sum by (mode, outcome) (increase(collections_calls_total[1h]))",
+          "legendFormat": "{{mode}} / {{outcome}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"

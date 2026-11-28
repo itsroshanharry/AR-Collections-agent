@@ -72,31 +72,46 @@ LLM_EXHAUSTED = Counter(
 # Calls and call quality
 # --------------------------------------------------------------------------------------
 
+# `mode` separates real calls (voice, simulate) from A/B experiment calls (experiment),
+# which run inside the dashboard process. Alerts look only at real calls: an experiment
+# exists to find a prompt that misbehaves, and that should not page anyone.
 CALLS = Counter(
     "collections_calls_total",
-    "Scored collections calls, by mode (voice, simulate), tier and extracted outcome.",
+    "Scored collections calls, by mode (voice, simulate, experiment), tier and outcome.",
     ["mode", "tier", "outcome"],
     registry=REGISTRY,
 )
 CALL_COMPOSITE = Histogram(
     "collections_call_composite_score",
-    "Judge composite score (1-5) per call, by prompt version.",
-    ["prompt_id"],
+    "Judge composite score (1-5) per call, by mode and prompt version.",
+    ["mode", "prompt_id"],
     buckets=(1, 2, 2.5, 3, 3.5, 4, 4.5, 5),
     registry=REGISTRY,
 )
 CALL_HALLUCINATIONS = Counter(
     "collections_call_hallucinations_total",
     "Calls in which the agent stated a figure absent from the invoice.",
-    ["prompt_id"],
+    ["mode", "prompt_id"],
     registry=REGISTRY,
 )
 CALL_COMPLIANCE = Counter(
     "collections_call_compliance_violations_total",
     "Calls the judge flagged for a compliance violation by the agent.",
-    ["prompt_id"],
+    ["mode", "prompt_id"],
     registry=REGISTRY,
 )
+
+
+def record_call(mode: str, tier: str, outcome: str, prompt_id: str, score=None) -> None:
+    """Count one scored call. `score` is a JudgeScore, or None if judging failed."""
+    CALLS.labels(mode, tier, outcome).inc()
+    if score is None:
+        return
+    CALL_COMPOSITE.labels(mode, prompt_id).observe(score.composite)
+    if score.hallucinated:
+        CALL_HALLUCINATIONS.labels(mode, prompt_id).inc()
+    if score.compliance_violations:
+        CALL_COMPLIANCE.labels(mode, prompt_id).inc()
 CAPTURE_DISAGREEMENTS = Counter(
     "collections_capture_disagreements_total",
     "Calls where the agent's live tool capture disagreed with transcript extraction.",

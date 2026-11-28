@@ -286,3 +286,53 @@ class TestPercentile:
 
     def test_p50_is_the_median(self) -> None:
         assert _percentile([1.0, 2.0, 3.0], 50) == 2.0
+
+
+class TestExperimentCallMetrics:
+    """Experiment calls feed the call-quality metrics, labelled so alerts can skip them."""
+
+    async def test_a_scored_variant_is_counted_as_an_experiment_call(self, monkeypatch) -> None:
+        from ab_dashboard import experiment_runner as runner
+        from shared.models import CallOutcome
+        from shared.observability.metrics import REGISTRY
+        from shared.prompt_store import load_by_id
+        from voice_agent.simulator import SimulatedCall
+
+        scenario = load_eval_set()[0]
+        prompt = load_by_id("collections_formal_v1")
+        score = JudgeScore(
+            scores=dict.fromkeys(JudgeDimension, 4),
+            hallucinated_figures=["Rs 99,999"],
+            compliance_violations=["threatened legal action"],
+        )
+
+        async def fake_simulate(client, prompt, scenario):
+            return SimulatedCall(scenario.scenario_id, prompt.id, [("agent", "hello")])
+
+        async def fake_judge(*args, **kwargs):
+            return score, None
+
+        async def fake_extract(*args, **kwargs):
+            return CallOutcome(outcome=OutcomeType.PROMISE_TO_PAY), None
+
+        monkeypatch.setattr(runner, "simulate_call", fake_simulate)
+        monkeypatch.setattr(runner, "judge_transcript", fake_judge)
+        monkeypatch.setattr(runner, "extract_outcome", fake_extract)
+
+        def value(name: str, **labels) -> float:
+            return REGISTRY.get_sample_value(name, labels) or 0.0
+
+        labels = {"mode": "experiment", "prompt_id": prompt.id}
+        before = (
+            value("collections_call_hallucinations_total", **labels),
+            value("collections_call_compliance_violations_total", **labels),
+            value("collections_call_composite_score_count", **labels),
+        )
+        run = await runner._run_variant(None, prompt, scenario, "A")
+        assert run.error is None
+        after = (
+            value("collections_call_hallucinations_total", **labels),
+            value("collections_call_compliance_violations_total", **labels),
+            value("collections_call_composite_score_count", **labels),
+        )
+        assert [b - a for a, b in zip(before, after, strict=True)] == [1, 1, 1]

@@ -32,6 +32,7 @@ from shared.models import (
     PromptVersion,
     RiskTier,
 )
+from shared.observability import metrics as obs
 from voice_agent.dunning_logic import classify_risk, tone_for_tier
 from voice_agent.outcome_extractor import extract_outcome
 from voice_agent.simulator import simulate_call
@@ -149,6 +150,9 @@ async def _run_variant(
         )
         run.extracted_outcome = outcome.outcome
         run.promise_to_pay_date = outcome.promise_to_pay_date
+        # Experiments run in the dashboard process, so they are what feeds the call
+        # quality panels on a deploy without the voice agent.
+        obs.record_call("experiment", tier.value, outcome.outcome.value, prompt.id, score)
     except Exception as exc:  # noqa: BLE001 - a failed variant must not kill the run
         logger.exception("Variant %s failed on %s", label, scenario.scenario_id)
         run.error = f"{type(exc).__name__}: {exc}"

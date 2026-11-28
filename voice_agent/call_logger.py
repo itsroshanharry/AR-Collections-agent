@@ -73,13 +73,7 @@ async def log_call(
         )
         session.add(row)
         await session.commit()
-        m.CALLS.labels(mode, row.risk_tier or "unknown", row.outcome or "none").inc()
-        if score:
-            m.CALL_COMPOSITE.labels(prompt_id).observe(score.composite)
-            if score.hallucinated:
-                m.CALL_HALLUCINATIONS.labels(prompt_id).inc()
-            if score.compliance_violations:
-                m.CALL_COMPLIANCE.labels(prompt_id).inc()
+        m.record_call(mode, row.risk_tier or "unknown", row.outcome or "none", prompt_id, score)
         logger.info(
             "Logged call %s: invoice=%s prompt=%s outcome=%s composite=%.2f",
             row.id,

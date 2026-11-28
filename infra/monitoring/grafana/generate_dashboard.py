@@ -58,7 +58,8 @@ def stat(title, expr, x, w, *, unit="none", thresholds=None, desc="", legend="")
             "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
             "colorMode": "value",
             "graphMode": "none",
-            "textMode": "value_and_name",
+            # Without a legend the "name" is the raw series labels, which only clutters a tile.
+            "textMode": "value_and_name" if legend else "value",
             "justifyMode": "auto",
             "orientation": "auto",
         },
@@ -146,7 +147,8 @@ panels += [
         5,
         unit="percentunit",
         thresholds=[GOOD, {"color": "orange", "value": 0.02}, {"color": "red", "value": 0.05}],
-        desc="Share of scored calls in which the agent stated a figure absent from the invoice.",
+        desc="Share of scored calls, A/B experiment calls included, in which the agent stated a "
+        "figure absent from the invoice. The alert counts real calls only.",
     ),
 ]
 y += 4
@@ -235,7 +237,12 @@ row("Call quality")
 panels += [
     series(
         "Calls per hour by outcome",
-        [("sum by (outcome) (increase(collections_calls_total[1h]))", "{{outcome}}")],
+        [
+            (
+                "sum by (mode, outcome) (increase(collections_calls_total[1h]))",
+                "{{mode}} / {{outcome}}",
+            )
+        ],
         0,
         12,
         stack=True,

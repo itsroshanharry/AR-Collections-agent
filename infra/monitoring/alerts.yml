@@ -36,7 +36,8 @@ groups:
     rules:
       - alert: AgentComplianceViolation
         # Any violation (a threat, an invented fee) is a conduct issue, not a trend.
-        expr: increase(collections_call_compliance_violations_total[15m]) > 0
+        # Experiment calls are excluded: finding a prompt that misbehaves is their job.
+        expr: increase(collections_call_compliance_violations_total{mode!="experiment"}[15m]) > 0
         labels: {severity: critical}
         annotations:
           summary: The judge flagged a compliance violation on prompt {{ $labels.prompt_id }}
@@ -44,9 +45,9 @@ groups:
 
       - alert: AgentHallucinationRateHigh
         expr: |
-          sum(increase(collections_call_hallucinations_total[1h]))
-            / sum(increase(collections_calls_total[1h])) > 0.05
-          and sum(increase(collections_calls_total[1h])) >= 10
+          sum(increase(collections_call_hallucinations_total{mode!="experiment"}[1h]))
+            / sum(increase(collections_calls_total{mode!="experiment"}[1h])) > 0.05
+          and sum(increase(collections_calls_total{mode!="experiment"}[1h])) >= 10
         for: 15m
         labels: {severity: warning}
         annotations:
