@@ -25,8 +25,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from ab_dashboard import auth, jobs
 from ab_dashboard import health as readiness
-from ab_dashboard import jobs
 from ab_dashboard.db import dispose_engine, init_db, normalise_database_url
 from ab_dashboard.routers import cash, dunning, experiments, prompts
 from shared.config import REPO_ROOT, get_settings
@@ -104,14 +104,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Permissive for local dev and a static frontend on Vercel/Pages. Tighten before
-# putting anything non-public behind this.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The console is served from this origin, so it needs no CORS. Other browser origins
+# (a frontend dev server on another host, a separate site) must be listed explicitly in
+# CORS_ALLOW_ORIGINS: with API keys in play, "*" would let any page a signed-in user
+# visits call the API.
+_origins = [o.strip() for o in _settings.cors_allow_origins.split(",") if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_methods=["GET", "POST", "PATCH"],
+        allow_headers=["Content-Type", "X-API-Key", "Authorization", "X-Act-As", "X-Request-ID"],
+    )
+
 
 @app.middleware("http")
 async def observe_request(request: Request, call_next):
@@ -157,6 +162,7 @@ async def metrics() -> Response:
     return Response(generate_latest(m.REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 
+app.include_router(auth.router)
 app.include_router(prompts.router)
 app.include_router(experiments.router)
 app.include_router(dunning.router)

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ab_dashboard.auth import ADMIN, OPERATOR
 from ab_dashboard.db import PromptVersionRow, get_session
 from shared.models import RiskTier, Tone
 from shared.prompt_store import PromptValidationError, load_all
@@ -82,7 +83,9 @@ async def _upsert(session: AsyncSession, data: PromptIn) -> tuple[PromptVersionR
     return row, True
 
 
-@router.post("", response_model=PromptOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=PromptOut, status_code=status.HTTP_201_CREATED, dependencies=[ADMIN]
+)
 async def register_prompt(
     data: PromptIn, session: AsyncSession = Depends(get_session)
 ) -> PromptOut:
@@ -92,7 +95,7 @@ async def register_prompt(
     return PromptOut.from_row(row)
 
 
-@router.post("/sync", response_model=SyncResult)
+@router.post("/sync", response_model=SyncResult, dependencies=[OPERATOR])
 async def sync_from_disk(session: AsyncSession = Depends(get_session)) -> SyncResult:
     """Import the voice agent's own prompt YAMLs.
 
@@ -132,18 +135,14 @@ async def sync_from_disk(session: AsyncSession = Depends(get_session)) -> SyncRe
 async def list_prompts(session: AsyncSession = Depends(get_session)) -> list[PromptOut]:
     rows = (
         await session.execute(
-            select(PromptVersionRow).order_by(
-                PromptVersionRow.name, PromptVersionRow.version
-            )
+            select(PromptVersionRow).order_by(PromptVersionRow.name, PromptVersionRow.version)
         )
     ).scalars()
     return [PromptOut.from_row(r) for r in rows]
 
 
 @router.get("/{prompt_id}", response_model=PromptOut)
-async def get_prompt(
-    prompt_id: str, session: AsyncSession = Depends(get_session)
-) -> PromptOut:
+async def get_prompt(prompt_id: str, session: AsyncSession = Depends(get_session)) -> PromptOut:
     row = await session.get(PromptVersionRow, prompt_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"No prompt {prompt_id!r}")

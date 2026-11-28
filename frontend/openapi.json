@@ -1052,6 +1052,66 @@
         "title": "LineResultOut",
         "type": "object"
       },
+      "MeOut": {
+        "properties": {
+          "actor": {
+            "description": "What the audit trail records for this caller",
+            "title": "Actor",
+            "type": "string"
+          },
+          "auth_enabled": {
+            "description": "False on a checkout with no keys configured",
+            "title": "Auth Enabled",
+            "type": "boolean"
+          },
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "can_act_as": {
+            "description": "Roles this caller may switch to with X-Act-As",
+            "items": {
+              "enum": [
+                "viewer",
+                "operator",
+                "admin"
+              ],
+              "type": "string"
+            },
+            "title": "Can Act As",
+            "type": "array"
+          },
+          "public_role": {
+            "description": "What a visitor without a key can do",
+            "enum": [
+              "viewer",
+              "operator",
+              "admin"
+            ],
+            "title": "Public Role",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "viewer",
+              "operator",
+              "admin"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "actor",
+          "authenticated",
+          "auth_enabled",
+          "public_role",
+          "can_act_as"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
       "OutcomeIn": {
         "description": "A call outcome recorded by hand (a person's call, or a demo without audio).",
         "properties": {
@@ -2498,6 +2558,28 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/auth/me": {
+      "get": {
+        "description": "Who the API thinks you are. A wrong key is a 401, so this also checks a key.",
+        "operationId": "me_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/cash/simulate": {
       "post": {
         "description": "Generate and ingest a day of realistic credits from the open invoices: clean\npayments, a part payment, bank charges, an account payment, and a few that no rule\ncan match. The demo stand-in for a real bank feed.",
@@ -3887,7 +3969,7 @@
     },
     "/tasks/{task_id}": {
       "patch": {
-        "description": "Resolve a task. The resolution moves the invoice on; see allowed_resolutions.",
+        "description": "Resolve a task. The resolution moves the invoice on; see allowed_resolutions.\nWriting a debt off or sending it to legal needs the admin role.",
         "operationId": "resolve_task_tasks__task_id__patch",
         "parameters": [
           {

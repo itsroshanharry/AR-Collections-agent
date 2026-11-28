@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Me
+         * @description Who the API thinks you are. A wrong key is a 401, so this also checks a key.
+         */
+        get: operations["me_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cash/simulate": {
         parameters: {
             query?: never;
@@ -543,6 +563,7 @@ export interface paths {
         /**
          * Resolve Task
          * @description Resolve a task. The resolution moves the invoice on; see allowed_resolutions.
+         *     Writing a debt off or sending it to legal needs the admin role.
          */
         patch: operations["resolve_task_tasks__task_id__patch"];
         trace?: never;
@@ -921,6 +942,37 @@ export interface components {
             transaction_id: string | null;
             /** Utr */
             utr: string;
+        };
+        /** MeOut */
+        MeOut: {
+            /**
+             * Actor
+             * @description What the audit trail records for this caller
+             */
+            actor: string;
+            /**
+             * Auth Enabled
+             * @description False on a checkout with no keys configured
+             */
+            auth_enabled: boolean;
+            /** Authenticated */
+            authenticated: boolean;
+            /**
+             * Can Act As
+             * @description Roles this caller may switch to with X-Act-As
+             */
+            can_act_as: ("viewer" | "operator" | "admin")[];
+            /**
+             * Public Role
+             * @description What a visitor without a key can do
+             * @enum {string}
+             */
+            public_role: "viewer" | "operator" | "admin";
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "viewer" | "operator" | "admin";
         };
         /**
          * OutcomeIn
@@ -1497,6 +1549,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    me_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+        };
+    };
     simulate_cash_simulate_post: {
         parameters: {
             query?: {

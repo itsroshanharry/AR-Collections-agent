@@ -50,6 +50,19 @@ def perfect_score() -> JudgeScore:
     return JudgeScore(scores=dict.fromkeys(JudgeDimension, 5))
 
 
+@pytest.fixture(autouse=True)
+def _no_access_keys(monkeypatch):
+    """Tests run with access control off unless they turn it on, whatever keys the
+    developer's own .env holds. An environment variable beats the .env file."""
+    from shared.config import get_settings
+
+    for name in ("OPERATOR_API_KEY", "ADMIN_API_KEY", "PUBLIC_ROLE"):
+        monkeypatch.setenv(name, "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def database_url(tmp_path) -> str:
     """A fresh, empty database for one test.

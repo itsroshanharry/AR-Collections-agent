@@ -8,6 +8,7 @@ from decimal import Decimal
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from ab_dashboard.auth import OPERATOR
 from ab_dashboard.db import BankTransactionRow
 from ab_dashboard.routers.dunning import _raise_for
 from workflow import cash
@@ -129,7 +130,7 @@ def _txn_out(txn: BankTransactionRow) -> TransactionOut:
     )
 
 
-@router.post("/transactions", response_model=IngestOut)
+@router.post("/transactions", response_model=IngestOut, dependencies=[OPERATOR])
 async def receive(lines: list[BankLineIn]) -> IngestOut:
     """Receive credits from a bank feed. Each is matched and applied, or queued as an
     exception. Idempotent on utr: replaying the feed applies nothing twice."""
@@ -139,6 +140,7 @@ async def receive(lines: list[BankLineIn]) -> IngestOut:
 @router.post(
     "/statement",
     response_model=IngestOut,
+    dependencies=[OPERATOR],
     openapi_extra={
         "requestBody": {
             "required": True,
@@ -163,7 +165,7 @@ async def upload_statement(request: Request) -> IngestOut:
     return _ingest_out(await cash.ingest(lines, source="statement"))
 
 
-@router.post("/simulate", response_model=IngestOut)
+@router.post("/simulate", response_model=IngestOut, dependencies=[OPERATOR])
 async def simulate(
     count: int = Query(default=8, ge=1, le=100), seed: int | None = None
 ) -> IngestOut:
@@ -188,7 +190,7 @@ async def list_transactions(
     return [_txn_out(t) for t in rows]
 
 
-@router.post("/transactions/{txn_id}/apply", response_model=TransactionOut)
+@router.post("/transactions/{txn_id}/apply", response_model=TransactionOut, dependencies=[OPERATOR])
 async def apply(txn_id: str, payload: ApplyIn) -> TransactionOut:
     """Apply an unmatched credit to the invoices a person decided it pays."""
     try:
@@ -200,7 +202,9 @@ async def apply(txn_id: str, payload: ApplyIn) -> TransactionOut:
     return _txn_out(txn)
 
 
-@router.post("/transactions/{txn_id}/dismiss", response_model=TransactionOut)
+@router.post(
+    "/transactions/{txn_id}/dismiss", response_model=TransactionOut, dependencies=[OPERATOR]
+)
 async def dismiss(txn_id: str, payload: DismissIn) -> TransactionOut:
     """Mark an unmatched credit as not a customer payment, with the reason."""
     try:

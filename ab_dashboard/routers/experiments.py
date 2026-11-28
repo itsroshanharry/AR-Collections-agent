@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ab_dashboard import jobs
+from ab_dashboard.auth import ADMIN
 from ab_dashboard.db import (
     ExperimentRow,
     ExperimentStatus,
@@ -184,7 +185,12 @@ def _experiment_out(row: ExperimentRow) -> ExperimentOut:
     )
 
 
-@router.post("", response_model=ExperimentOut, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "",
+    response_model=ExperimentOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[ADMIN],
+)
 async def create_experiment(
     payload: ExperimentIn,
     session: AsyncSession = Depends(get_session),

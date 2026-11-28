@@ -26,5 +26,14 @@ services:
         sync: false
       - key: VOICE_PROVIDER
         value: cloud
+      # Access control (ab_dashboard/auth.py). Visitors without a key can look but not
+      # act. Render generates both keys; copy them from the dashboard to sign in. With
+      # PUBLIC_ROLE pinned to viewer, a deploy whose keys went missing fails closed.
+      - key: PUBLIC_ROLE
+        value: viewer
+      - key: OPERATOR_API_KEY
+        generateValue: true
+      - key: ADMIN_API_KEY
+        generateValue: true
       # Free instances spin down after ~15 min idle and cold-start in 30-60s.
       # Warm it up before a live interview.

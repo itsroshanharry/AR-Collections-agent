@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -78,10 +79,29 @@ class Settings(BaseSettings):
     log_format: Literal["text", "json"] = "text"
     log_level: str = "INFO"
 
+    # --- Access control (ab_dashboard/auth.py) ---
+    # Sent as X-API-Key. Operators work the book; admins can also write debts off, send
+    # them to legal, start experiments (which spend LLM budget) and reset the demo.
+    operator_api_key: str | None = None
+    admin_api_key: str | None = None
+    # The role of a request without a key. Unset: admin while no keys are configured (a
+    # local checkout just works), viewer once any key is. Set it to "viewer" when
+    # deploying, so a deploy with a missing key fails closed rather than open.
+    public_role: Literal["viewer", "operator", "admin"] | None = None
+    # Origins allowed to call the API from a browser, comma-separated. The console is
+    # served from the API's own origin and needs none.
+    cors_allow_origins: str = ""
+
     # --- Dunning workflow ---
     # Seconds between scheduler passes in the dashboard process. 0 disables the timer;
     # POST /dunning/tick still runs a pass on demand.
     dunning_tick_seconds: float = 300
+
+    @field_validator("operator_api_key", "admin_api_key", "public_role", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        # `ADMIN_API_KEY=` in an env file means "not set", not "the empty key".
+        return None if isinstance(value, str) and not value.strip() else value
 
     @property
     def has_any_llm_provider(self) -> bool:

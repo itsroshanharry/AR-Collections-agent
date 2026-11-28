@@ -6,9 +6,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from ab_dashboard.auth import OPERATOR, Principal, Role, ensure, require
 from ab_dashboard.db import ContactAttemptRow, InvoiceEventRow, InvoiceStateRow, TaskRow
 from shared.models import AccountItem, CallOutcome, OutcomeType
 from workflow import service, views
@@ -285,7 +286,7 @@ def _raise_for(exc: Exception) -> None:
 # --------------------------------------------------------------------------------------
 
 
-@router.post("/sync", response_model=service.SyncReport)
+@router.post("/sync", response_model=service.SyncReport, dependencies=[OPERATOR])
 async def sync(limit: int | None = Query(default=None, ge=1)) -> service.SyncReport:
     """Load the ledger (the generated AR dataset) into the workflow. Idempotent."""
     from data.generate_dataset import load_invoices
@@ -297,7 +298,7 @@ async def sync(limit: int | None = Query(default=None, ge=1)) -> service.SyncRep
     return await service.sync_invoices(invoices[:limit] if limit else invoices)
 
 
-@router.post("/tick", response_model=service.TickReport)
+@router.post("/tick", response_model=service.TickReport, dependencies=[OPERATOR])
 async def tick() -> service.TickReport:
     """Run one scheduler pass now. The app also runs this on a timer."""
     return await service.tick()
@@ -380,9 +381,7 @@ async def get_customer(customer_id: str) -> CustomerAccountOut:
         overdue_in_dunning=_money(account.overdue_in_dunning),
         outstanding=_money(account.outstanding),
         invoices=[
-            CustomerInvoiceOut(
-                **_state_out(row).model_dump(), days_overdue_today=inv.days_overdue
-            )
+            CustomerInvoiceOut(**_state_out(row).model_dump(), days_overdue_today=inv.days_overdue)
             for row, inv in account.invoices
         ],
         open_tasks=[_task_out(t) for t in account.open_tasks],
@@ -406,7 +405,7 @@ async def get_invoice(invoice_id: str) -> InvoiceDetailOut:
     )
 
 
-@router.post("/invoices/{invoice_id}/outcomes", response_model=OutcomeOut)
+@router.post("/invoices/{invoice_id}/outcomes", response_model=OutcomeOut, dependencies=[OPERATOR])
 async def record_outcome(invoice_id: str, payload: OutcomeIn) -> OutcomeOut:
     """Record a call outcome by hand. The voice agent records its own automatically."""
     outcome = CallOutcome(
@@ -429,19 +428,19 @@ async def record_outcome(invoice_id: str, payload: OutcomeIn) -> OutcomeOut:
     return OutcomeOut(**report.__dict__)
 
 
-@router.post("/invoices/{invoice_id}/payments", response_model=InvoiceStateOut)
+@router.post(
+    "/invoices/{invoice_id}/payments", response_model=InvoiceStateOut, dependencies=[OPERATOR]
+)
 async def record_payment(invoice_id: str, payload: PaymentIn) -> InvoiceStateOut:
     """Apply a payment. Stands in for the ERP or bank feed a real deployment would use."""
     try:
-        row = await service.record_payment(
-            invoice_id, payload.amount, reference=payload.reference
-        )
+        row = await service.record_payment(invoice_id, payload.amount, reference=payload.reference)
     except Exception as exc:  # noqa: BLE001
         _raise_for(exc)
     return _state_out(row)
 
 
-@router.patch("/invoices/{invoice_id}", response_model=InvoiceStateOut)
+@router.patch("/invoices/{invoice_id}", response_model=InvoiceStateOut, dependencies=[OPERATOR])
 async def update_invoice(invoice_id: str, payload: DoNotCallIn) -> InvoiceStateOut:
     """Set or clear do-not-call. Calls and SMS in the cadence then go out as email."""
     try:
@@ -475,9 +474,20 @@ async def list_tasks(
     return [_task_out(t) for t in rows]
 
 
+# Resolutions that give up on collecting the money need more authority than the rest.
+ADMIN_RESOLUTIONS = frozenset({"write_off", "legal"})
+
+
 @tasks_router.patch("/{task_id}", response_model=TaskOut)
-async def resolve_task(task_id: str, payload: TaskResolveIn) -> TaskOut:
-    """Resolve a task. The resolution moves the invoice on; see allowed_resolutions."""
+async def resolve_task(
+    task_id: str,
+    payload: TaskResolveIn,
+    principal: Principal = Depends(require(Role.OPERATOR)),
+) -> TaskOut:
+    """Resolve a task. The resolution moves the invoice on; see allowed_resolutions.
+    Writing a debt off or sending it to legal needs the admin role."""
+    if payload.resolution in ADMIN_RESOLUTIONS:
+        ensure(principal, Role.ADMIN)
     try:
         task, _ = await service.resolve_task(task_id, payload.resolution, note=payload.note)
     except Exception as exc:  # noqa: BLE001
